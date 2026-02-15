@@ -40,11 +40,14 @@ jobs:
             --release-date "${{ github.event.inputs.release_date }}" \
             --output "data/${{ github.event.inputs.model_id }}.json"
 
+      - name: Copy data to frontend
+        run: cp data/all_models.json frontend/public/
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/
+          git add data/ frontend/public/all_models.json
           git diff --staged --quiet || git commit -m "Update LLM support data for ${{ github.event.inputs.model_id }}"
           git push
 
@@ -68,10 +71,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/run_all_models.py
 
+      - name: Copy data to frontend
+        run: cp data/all_models.json frontend/public/
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/
+          git add data/ frontend/public/all_models.json
           git diff --staged --quiet || git commit -m "Update LLM support data (scheduled run)"
           git push

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import modelsData from '../../data/all_models.json';
 
 interface ModelSupport {
   model_id: string;
@@ -50,9 +49,23 @@ function App() {
   const [models, setModels] = useState<ModelSupport[]>([]);
   const [sortField, setSortField] = useState<keyof ModelSupport>('model_id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setModels(modelsData as ModelSupport[]);
+    fetch('/all_models.json')
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load data');
+        return res.json();
+      })
+      .then((data) => {
+        setModels(data as ModelSupport[]);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
   }, []);
 
   const sortedModels = [...models].sort((a, b) => {
@@ -79,6 +92,27 @@ function App() {
     if (sortField !== field) return <span className="text-gray-600 ml-1">↕</span>;
     return <span className="text-blue-400 ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0c0e10] text-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto"></div>
+          <p className="mt-4 text-[#9099ac]">Loading model data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#0c0e10] text-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-400">Error: {error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0c0e10] text-gray-100">
