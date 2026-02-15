@@ -3,5 +3,6 @@
   "release_date": "2025-10-01",
   "sdk_support_timestamp": "2025-11-11T03:11:40.000+07:00",
   "frontend_support_timestamp": null,
-  "index_results_timestamp": "2026-02-10T10:52:36Z"
+  "index_results_timestamp": "2026-02-10T10:52:36Z",
+  "infra_litellm_timestamp": null
 }

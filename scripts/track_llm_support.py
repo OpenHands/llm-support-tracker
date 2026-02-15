@@ -24,6 +24,7 @@ REPOS = {
     "sdk": "OpenHands/software-agent-sdk",
     "frontend": "OpenHands/OpenHands",
     "index_results": "OpenHands/openhands-index-results",
+    "infra": "All-Hands-AI/infra",
 }
 
 # Files to search for model support in each repo
@@ -31,6 +32,7 @@ SEARCH_PATHS = {
     "sdk": ["openhands-sdk/openhands/sdk/llm/"],
     "frontend": ["frontend/src/utils/verified-models.ts"],
     "index_results": ["results/"],
+    "infra": ["litellm/", "proxy/"],
 }
 
 
@@ -156,6 +158,7 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "sdk_support_timestamp": None,
         "frontend_support_timestamp": None,
         "index_results_timestamp": None,
+        "infra_litellm_timestamp": None,
     }
 
     # Search for SDK support
@@ -176,6 +179,13 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in openhands-index-results...")
     index_timestamp = search_index_results_folder(model_id)
     result["index_results_timestamp"] = index_timestamp
+
+    # Search for infra/litellm proxy support
+    print(f"Searching for {model_id} in All-Hands-AI/infra litellm proxy...")
+    infra_timestamp = search_commits_for_model(
+        REPOS["infra"], model_id, SEARCH_PATHS["infra"]
+    )
+    result["infra_litellm_timestamp"] = infra_timestamp
 
     return result
 
