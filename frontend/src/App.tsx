@@ -7,6 +7,7 @@ interface ModelSupport {
   frontend_support_timestamp: string | null;
   index_results_timestamp: string | null;
   infra_litellm_timestamp: string | null;
+  litellm_support_timestamp: string | null;
 }
 
 function formatDate(dateStr: string | null): string {
@@ -157,9 +158,15 @@ function App() {
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
+                    onClick={() => handleSort('litellm_support_timestamp')}
+                  >
+                    LiteLLM <SortIcon field="litellm_support_timestamp" />
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
                     onClick={() => handleSort('infra_litellm_timestamp')}
                   >
-                    Infra LiteLLM <SortIcon field="infra_litellm_timestamp" />
+                    Infra Proxy <SortIcon field="infra_litellm_timestamp" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
@@ -211,6 +218,19 @@ function App() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
+                        <StatusBadge timestamp={model.litellm_support_timestamp} />
+                        {model.litellm_support_timestamp && (
+                          <span className="text-xs text-[#9099ac]">
+                            {formatDate(model.litellm_support_timestamp)}
+                            <span className="ml-1 text-blue-400">
+                              ({getDaysDiff(model.litellm_support_timestamp, model.release_date)})
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
                         <StatusBadge timestamp={model.infra_litellm_timestamp} />
                         {model.infra_litellm_timestamp && (
                           <span className="text-xs text-[#9099ac]">
@@ -242,7 +262,7 @@ function App() {
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
             <h3 className="text-sm font-medium text-[#9099ac]">Total Models</h3>
             <p className="text-2xl font-bold text-white mt-1">{models.length}</p>
@@ -254,9 +274,21 @@ function App() {
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">Frontend Supported</h3>
+            <h3 className="text-sm font-medium text-[#9099ac]">Frontend</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
               {models.filter((m) => m.frontend_support_timestamp).length}
+            </p>
+          </div>
+          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
+            <h3 className="text-sm font-medium text-[#9099ac]">LiteLLM</h3>
+            <p className="text-2xl font-bold text-green-400 mt-1">
+              {models.filter((m) => m.litellm_support_timestamp).length}
+            </p>
+          </div>
+          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
+            <h3 className="text-sm font-medium text-[#9099ac]">Infra Proxy</h3>
+            <p className="text-2xl font-bold text-green-400 mt-1">
+              {models.filter((m) => m.infra_litellm_timestamp).length}
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">

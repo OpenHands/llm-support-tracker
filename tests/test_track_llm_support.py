@@ -14,6 +14,7 @@ from track_llm_support import (
     get_github_headers,
     search_commits_for_model,
     search_index_results_folder,
+    search_litellm_support,
     track_llm_support,
 )
 
@@ -132,13 +133,49 @@ class TestSearchIndexResultsFolder:
         assert result is None
 
 
+class TestSearchLitellmSupport:
+    """Tests for search_litellm_support function."""
+
+    @patch("track_llm_support.requests.get")
+    def test_search_litellm_success(self, mock_get):
+        """Test successful litellm search."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "total_count": 1,
+            "items": [
+                {
+                    "commit": {
+                        "author": {"date": "2024-01-15T10:00:00Z"}
+                    }
+                }
+            ],
+        }
+        mock_get.return_value = mock_response
+
+        result = search_litellm_support("test-model")
+        assert result == "2024-01-15T10:00:00Z"
+
+    @patch("track_llm_support.requests.get")
+    def test_search_litellm_not_found(self, mock_get):
+        """Test litellm search when model is not found."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"total_count": 0, "items": []}
+        mock_get.return_value = mock_response
+
+        result = search_litellm_support("nonexistent-model")
+        assert result is None
+
+
 class TestTrackLlmSupport:
     """Tests for track_llm_support function."""
 
+    @patch("track_llm_support.search_litellm_support")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_commits, mock_search_index
+        self, mock_search_commits, mock_search_index, mock_search_litellm
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_commits.side_effect = [
@@ -147,6 +184,7 @@ class TestTrackLlmSupport:
             "2024-02-01T10:00:00Z",  # Infra
         ]
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
+        mock_search_litellm.return_value = "2024-01-18T10:00:00Z"
 
         result = track_llm_support("test-model", "2024-01-15")
 
@@ -156,11 +194,13 @@ class TestTrackLlmSupport:
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
         assert result["infra_litellm_timestamp"] == "2024-02-01T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
+        assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
+    @patch("track_llm_support.search_litellm_support")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_commits, mock_search_index
+        self, mock_search_commits, mock_search_index, mock_search_litellm
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_commits.side_effect = [
@@ -169,6 +209,7 @@ class TestTrackLlmSupport:
             None,  # Infra
         ]
         mock_search_index.return_value = None
+        mock_search_litellm.return_value = None
 
         result = track_llm_support("test-model", "2024-01-15")
 
@@ -177,6 +218,7 @@ class TestTrackLlmSupport:
         assert result["frontend_support_timestamp"] is None
         assert result["infra_litellm_timestamp"] is None
         assert result["index_results_timestamp"] is None
+        assert result["litellm_support_timestamp"] is None
 
 
 class TestOutputFormat:
@@ -198,6 +240,7 @@ class TestOutputFormat:
                 "frontend_support_timestamp": None,
                 "index_results_timestamp": None,
                 "infra_litellm_timestamp": None,
+                "litellm_support_timestamp": None,
             }
 
             with open(output_file, "w") as f:
@@ -213,6 +256,7 @@ class TestOutputFormat:
             assert "frontend_support_timestamp" in loaded
             assert "index_results_timestamp" in loaded
             assert "infra_litellm_timestamp" in loaded
+            assert "litellm_support_timestamp" in loaded
 
         finally:
             os.unlink(output_file)

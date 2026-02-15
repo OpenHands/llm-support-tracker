@@ -86,6 +86,43 @@ def search_commits_for_model(
     return None
 
 
+def search_litellm_support(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was added to BerriAI/litellm.
+
+    This searches the upstream litellm repository for when the model
+    was first added to model_prices_and_context_window.json.
+
+    Args:
+        model_id: The language model ID to search for
+
+    Returns:
+        ISO timestamp of when the model was added, or None if not found
+    """
+    headers = get_github_headers()
+
+    # Search for commits adding the model to litellm
+    search_url = f"{GITHUB_API_BASE}/search/commits"
+    query = f"repo:BerriAI/litellm {model_id}"
+    params = {"q": query, "sort": "author-date", "order": "asc", "per_page": 1}
+
+    try:
+        response = requests.get(search_url, headers=headers, params=params, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("total_count", 0) > 0:
+                items = data.get("items", [])
+                if items:
+                    commit = items[0]
+                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
+                    if commit_date:
+                        return commit_date
+    except requests.RequestException as e:
+        print(f"Warning: Error searching litellm commits: {e}", file=sys.stderr)
+
+    return None
+
+
 def search_index_results_folder(model_id: str) -> Optional[str]:
     """
     Search for when a model folder was added to openhands-index-results.
@@ -159,6 +196,7 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "frontend_support_timestamp": None,
         "index_results_timestamp": None,
         "infra_litellm_timestamp": None,
+        "litellm_support_timestamp": None,
     }
 
     # Search for SDK support
@@ -186,6 +224,11 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         REPOS["infra"], model_id, SEARCH_PATHS["infra"]
     )
     result["infra_litellm_timestamp"] = infra_timestamp
+
+    # Search for upstream litellm support
+    print(f"Searching for {model_id} in BerriAI/litellm...")
+    litellm_timestamp = search_litellm_support(model_id)
+    result["litellm_support_timestamp"] = litellm_timestamp
 
     return result
 
