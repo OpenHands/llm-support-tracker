@@ -5,7 +5,8 @@
     "sdk_support_timestamp": "2026-01-12T16:40:19.000-05:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
     "litellm_support_timestamp": "2026-01-14T05:22:50.000+07:00"
   },
   {
@@ -14,7 +15,8 @@
     "sdk_support_timestamp": "2026-01-29T16:41:36.000-03:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
     "litellm_support_timestamp": "2025-09-26T20:11:26.000+08:00"
   },
   {
@@ -23,7 +25,8 @@
     "sdk_support_timestamp": "2025-12-28T20:25:29.000+01:00",
     "frontend_support_timestamp": "2026-01-30T09:15:47.000-08:00",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
     "litellm_support_timestamp": "2026-01-13T19:19:47.000-03:00"
   },
   {
@@ -32,7 +35,8 @@
     "sdk_support_timestamp": "2025-12-28T20:25:29.000+01:00",
     "frontend_support_timestamp": "2026-01-30T09:15:47.000-08:00",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": "2025-12-19T18:58:03Z",
+    "prod_proxy_timestamp": "2025-12-19T18:58:03Z",
     "litellm_support_timestamp": "2024-03-06T17:42:08.000-08:00"
   },
   {
@@ -41,7 +45,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": "2026-02-09T16:09:13Z",
+    "prod_proxy_timestamp": "2026-02-09T16:09:13Z",
     "litellm_support_timestamp": "2024-11-07T23:11:14.000-06:00"
   },
   {
@@ -50,7 +55,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": "2025-11-18T23:29:54.000+01:00",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": "2025-11-18T17:12:14Z",
+    "prod_proxy_timestamp": "2025-11-18T17:12:14Z",
     "litellm_support_timestamp": "2024-01-11T14:39:08.000+05:30"
   },
   {
@@ -59,7 +65,8 @@
     "sdk_support_timestamp": "2025-11-11T03:11:40.000+07:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": "2025-11-10T14:02:25Z",
     "litellm_support_timestamp": "2025-11-11T02:56:06.000+03:00"
   },
   {
@@ -68,26 +75,29 @@
     "sdk_support_timestamp": "2026-01-27T12:32:52.000-08:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
-    "litellm_support_timestamp": null
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
+    "litellm_support_timestamp": "2025-07-21T12:51:02.000-06:00"
   },
   {
     "model_id": "MiniMax-M2.1",
     "release_date": "2025-09-01",
-    "sdk_support_timestamp": null,
+    "sdk_support_timestamp": "2026-01-21T11:23:28.000-03:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
-    "litellm_support_timestamp": null
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
+    "litellm_support_timestamp": "2025-11-11T19:11:22.000-08:00"
   },
   {
     "model_id": "MiniMax-M2.5",
     "release_date": "2025-11-01",
-    "sdk_support_timestamp": null,
-    "frontend_support_timestamp": null,
+    "sdk_support_timestamp": "2026-02-11T16:11:13.000Z",
+    "frontend_support_timestamp": "2026-02-11T16:57:22.000Z",
     "index_results_timestamp": "2026-02-12T01:50:30Z",
-    "infra_litellm_timestamp": null,
-    "litellm_support_timestamp": null
+    "eval_proxy_timestamp": "2026-02-10T10:57:06Z",
+    "prod_proxy_timestamp": "2026-02-11T16:00:34Z",
+    "litellm_support_timestamp": "2026-02-13T18:32:12.000+05:30"
   },
   {
     "model_id": "Nemotron-3-Nano",
@@ -95,7 +105,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
     "litellm_support_timestamp": null
   },
   {
@@ -104,7 +115,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": "2025-07-29T21:17:38Z",
+    "prod_proxy_timestamp": "2025-09-29T14:28:12Z",
     "litellm_support_timestamp": null
   },
   {
@@ -113,7 +125,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": "2025-11-25T17:19:56Z",
+    "prod_proxy_timestamp": "2025-11-25T17:19:56Z",
     "litellm_support_timestamp": null
   },
   {
@@ -122,7 +135,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": "2026-02-09T15:18:01Z",
     "litellm_support_timestamp": null
   },
   {
@@ -131,7 +145,8 @@
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
-    "infra_litellm_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": "2025-09-29T17:48:37Z",
     "litellm_support_timestamp": null
   }
 ]

@@ -14,6 +14,7 @@ from track_llm_support import (
     get_github_headers,
     search_commits_for_model,
     search_index_results_folder,
+    search_infra_proxy,
     search_litellm_support,
     track_llm_support,
 )
@@ -168,22 +169,74 @@ class TestSearchLitellmSupport:
         assert result is None
 
 
+class TestSearchInfraProxy:
+    """Tests for search_infra_proxy function."""
+
+    @patch("track_llm_support.requests.get")
+    def test_search_eval_proxy_success(self, mock_get):
+        """Test successful eval proxy search."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # The new implementation uses commits API which returns a list of commits
+        mock_response.json.return_value = [
+            {
+                "commit": {
+                    "message": "Add test-model to eval proxy",
+                    "author": {"date": "2024-01-15T10:00:00Z"}
+                }
+            },
+            {
+                "commit": {
+                    "message": "Initial commit",
+                    "author": {"date": "2024-01-10T10:00:00Z"}
+                }
+            }
+        ]
+        mock_get.return_value = mock_response
+
+        result = search_infra_proxy("test-model", "eval_proxy")
+        assert result == "2024-01-15T10:00:00Z"
+
+    @patch("track_llm_support.requests.get")
+    def test_search_prod_proxy_not_found(self, mock_get):
+        """Test prod proxy search when model is not found."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Return commits that don't mention the model
+        mock_response.json.return_value = [
+            {
+                "commit": {
+                    "message": "Add other-model to prod proxy",
+                    "author": {"date": "2024-01-15T10:00:00Z"}
+                }
+            }
+        ]
+        mock_get.return_value = mock_response
+
+        result = search_infra_proxy("nonexistent-model", "prod_proxy")
+        assert result is None
+
+
 class TestTrackLlmSupport:
     """Tests for track_llm_support function."""
 
     @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_commits, mock_search_index, mock_search_litellm
+        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_commits.side_effect = [
             "2024-01-20T10:00:00Z",  # SDK
             "2024-01-25T10:00:00Z",  # Frontend
-            "2024-02-01T10:00:00Z",  # Infra
         ]
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
+        mock_search_infra.side_effect = [
+            "2024-02-01T10:00:00Z",  # Eval proxy
+            "2024-02-03T10:00:00Z",  # Prod proxy
+        ]
         mock_search_litellm.return_value = "2024-01-18T10:00:00Z"
 
         result = track_llm_support("test-model", "2024-01-15")
@@ -192,23 +245,25 @@ class TestTrackLlmSupport:
         assert result["release_date"] == "2024-01-15"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
-        assert result["infra_litellm_timestamp"] == "2024-02-01T10:00:00Z"
+        assert result["eval_proxy_timestamp"] == "2024-02-01T10:00:00Z"
+        assert result["prod_proxy_timestamp"] == "2024-02-03T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
         assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
     @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_commits, mock_search_index, mock_search_litellm
+        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_commits.side_effect = [
             "2024-01-20T10:00:00Z",  # SDK
             None,  # Frontend
-            None,  # Infra
         ]
         mock_search_index.return_value = None
+        mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
         mock_search_litellm.return_value = None
 
         result = track_llm_support("test-model", "2024-01-15")
@@ -216,7 +271,8 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
         assert result["frontend_support_timestamp"] is None
-        assert result["infra_litellm_timestamp"] is None
+        assert result["eval_proxy_timestamp"] is None
+        assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
         assert result["litellm_support_timestamp"] is None
 
@@ -239,7 +295,8 @@ class TestOutputFormat:
                 "sdk_support_timestamp": "2024-01-20T10:00:00Z",
                 "frontend_support_timestamp": None,
                 "index_results_timestamp": None,
-                "infra_litellm_timestamp": None,
+                "eval_proxy_timestamp": None,
+                "prod_proxy_timestamp": None,
                 "litellm_support_timestamp": None,
             }
 
@@ -255,7 +312,8 @@ class TestOutputFormat:
             assert "sdk_support_timestamp" in loaded
             assert "frontend_support_timestamp" in loaded
             assert "index_results_timestamp" in loaded
-            assert "infra_litellm_timestamp" in loaded
+            assert "eval_proxy_timestamp" in loaded
+            assert "prod_proxy_timestamp" in loaded
             assert "litellm_support_timestamp" in loaded
 
         finally:

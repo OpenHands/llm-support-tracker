@@ -32,7 +32,8 @@ SEARCH_PATHS = {
     "sdk": ["openhands-sdk/openhands/sdk/llm/"],
     "frontend": ["frontend/src/utils/verified-models.ts"],
     "index_results": ["results/"],
-    "infra": ["litellm/", "proxy/"],
+    "eval_proxy": ["k8s/evaluation/litellm.yaml"],
+    "prod_proxy": ["k8s/production/litellm.yaml"],
 }
 
 
@@ -178,6 +179,81 @@ def search_index_results_folder(model_id: str) -> Optional[str]:
     return None
 
 
+def get_provider_from_model(model_id: str) -> Optional[str]:
+    """
+    Determine the provider from a model ID for wildcard routing lookup.
+    """
+    model_lower = model_id.lower()
+    
+    # Map model prefixes to provider wildcards
+    provider_mappings = {
+        "claude": "anthropic",
+        "gpt": "openai",
+        "gemini": "gemini",
+        "deepseek": "deepseek",
+        "mistral": "mistral",
+        "qwen": "together_ai",  # Qwen models often via together
+        "llama": "together_ai",
+        "kimi": "moonshot",
+        "glm": "zhipu",  # GLM models from Zhipu
+    }
+    
+    for prefix, provider in provider_mappings.items():
+        if model_lower.startswith(prefix):
+            return provider
+    
+    return None
+
+
+def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
+    """
+    Search for when a model was added to the infra proxy configuration.
+
+    This searches commits that modified the litellm.yaml file and checks
+    if the commit message mentions the model.
+
+    Args:
+        model_id: The language model ID to search for
+        proxy_type: Either "eval_proxy" or "prod_proxy"
+
+    Returns:
+        ISO timestamp of when the model was added, or None if not found
+    """
+    headers = get_github_headers()
+    repo = REPOS["infra"]
+    path = SEARCH_PATHS[proxy_type][0]
+
+    # Get commits that modified the litellm.yaml file
+    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
+    params = {"path": path, "per_page": 100}
+
+    try:
+        response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+        if response.status_code == 200:
+            commits = response.json()
+            
+            # Search through commits for model name (case-insensitive)
+            model_lower = model_id.lower()
+            matching_commits = []
+            
+            for commit in commits:
+                message = commit.get("commit", {}).get("message", "").lower()
+                # Check if model name appears in commit message
+                if model_lower in message:
+                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
+                    if commit_date:
+                        matching_commits.append(commit_date)
+            
+            # Return the oldest matching commit (first time model was added)
+            if matching_commits:
+                return matching_commits[-1]  # Last in list is oldest
+                
+    except requests.RequestException as e:
+        print(f"Warning: Error searching {proxy_type} commits: {e}", file=sys.stderr)
+
+    return None
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -195,7 +271,8 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "sdk_support_timestamp": None,
         "frontend_support_timestamp": None,
         "index_results_timestamp": None,
-        "infra_litellm_timestamp": None,
+        "eval_proxy_timestamp": None,
+        "prod_proxy_timestamp": None,
         "litellm_support_timestamp": None,
     }
 
@@ -218,12 +295,15 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     index_timestamp = search_index_results_folder(model_id)
     result["index_results_timestamp"] = index_timestamp
 
-    # Search for infra/litellm proxy support
-    print(f"Searching for {model_id} in All-Hands-AI/infra litellm proxy...")
-    infra_timestamp = search_commits_for_model(
-        REPOS["infra"], model_id, SEARCH_PATHS["infra"]
-    )
-    result["infra_litellm_timestamp"] = infra_timestamp
+    # Search for eval proxy support
+    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
+    result["eval_proxy_timestamp"] = eval_proxy_timestamp
+
+    # Search for prod proxy support
+    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
+    result["prod_proxy_timestamp"] = prod_proxy_timestamp
 
     # Search for upstream litellm support
     print(f"Searching for {model_id} in BerriAI/litellm...")

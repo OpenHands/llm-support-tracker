@@ -16,7 +16,8 @@ interface ModelSupport {
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
   index_results_timestamp: string | null;
-  infra_litellm_timestamp: string | null;
+  eval_proxy_timestamp: string | null;
+  prod_proxy_timestamp: string | null;
   litellm_support_timestamp: string | null;
 }
 
@@ -117,12 +118,14 @@ function App() {
       sdkPercent: number;
       frontendPercent: number;
       litellmPercent: number;
-      infraPercent: number;
+      evalProxyPercent: number;
+      prodProxyPercent: number;
       indexPercent: number;
       sdkAvgDays: number | null;
       frontendAvgDays: number | null;
       litellmAvgDays: number | null;
-      infraAvgDays: number | null;
+      evalProxyAvgDays: number | null;
+      prodProxyAvgDays: number | null;
       indexAvgDays: number | null;
     }> = [];
 
@@ -144,7 +147,8 @@ function App() {
         const sdkSupported = modelsInWindow.filter((m) => m.sdk_support_timestamp).length;
         const frontendSupported = modelsInWindow.filter((m) => m.frontend_support_timestamp).length;
         const litellmSupported = modelsInWindow.filter((m) => m.litellm_support_timestamp).length;
-        const infraSupported = modelsInWindow.filter((m) => m.infra_litellm_timestamp).length;
+        const evalProxySupported = modelsInWindow.filter((m) => m.eval_proxy_timestamp).length;
+        const prodProxySupported = modelsInWindow.filter((m) => m.prod_proxy_timestamp).length;
         const indexSupported = modelsInWindow.filter((m) => m.index_results_timestamp).length;
 
         // Calculate average support time (days from release to support)
@@ -167,12 +171,14 @@ function App() {
           sdkPercent: Math.round((sdkSupported / modelsInWindow.length) * 100),
           frontendPercent: Math.round((frontendSupported / modelsInWindow.length) * 100),
           litellmPercent: Math.round((litellmSupported / modelsInWindow.length) * 100),
-          infraPercent: Math.round((infraSupported / modelsInWindow.length) * 100),
+          evalProxyPercent: Math.round((evalProxySupported / modelsInWindow.length) * 100),
+          prodProxyPercent: Math.round((prodProxySupported / modelsInWindow.length) * 100),
           indexPercent: Math.round((indexSupported / modelsInWindow.length) * 100),
           sdkAvgDays: calcAvgDays(modelsInWindow, 'sdk_support_timestamp'),
           frontendAvgDays: calcAvgDays(modelsInWindow, 'frontend_support_timestamp'),
           litellmAvgDays: calcAvgDays(modelsInWindow, 'litellm_support_timestamp'),
-          infraAvgDays: calcAvgDays(modelsInWindow, 'infra_litellm_timestamp'),
+          evalProxyAvgDays: calcAvgDays(modelsInWindow, 'eval_proxy_timestamp'),
+          prodProxyAvgDays: calcAvgDays(modelsInWindow, 'prod_proxy_timestamp'),
           indexAvgDays: calcAvgDays(modelsInWindow, 'index_results_timestamp'),
         });
       }
@@ -259,9 +265,15 @@ function App() {
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
-                    onClick={() => handleSort('infra_litellm_timestamp')}
+                    onClick={() => handleSort('eval_proxy_timestamp')}
                   >
-                    Infra Proxy <SortIcon field="infra_litellm_timestamp" />
+                    Eval Proxy <SortIcon field="eval_proxy_timestamp" />
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
+                    onClick={() => handleSort('prod_proxy_timestamp')}
+                  >
+                    Prod Proxy <SortIcon field="prod_proxy_timestamp" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
@@ -326,12 +338,25 @@ function App() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <StatusBadge timestamp={model.infra_litellm_timestamp} />
-                        {model.infra_litellm_timestamp && (
+                        <StatusBadge timestamp={model.eval_proxy_timestamp} />
+                        {model.eval_proxy_timestamp && (
                           <span className="text-xs text-[#9099ac]">
-                            {formatDate(model.infra_litellm_timestamp)}
+                            {formatDate(model.eval_proxy_timestamp)}
                             <span className="ml-1 text-blue-400">
-                              ({getDaysDiff(model.infra_litellm_timestamp, model.release_date)})
+                              ({getDaysDiff(model.eval_proxy_timestamp, model.release_date)})
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge timestamp={model.prod_proxy_timestamp} />
+                        {model.prod_proxy_timestamp && (
+                          <span className="text-xs text-[#9099ac]">
+                            {formatDate(model.prod_proxy_timestamp)}
+                            <span className="ml-1 text-blue-400">
+                              ({getDaysDiff(model.prod_proxy_timestamp, model.release_date)})
                             </span>
                           </span>
                         )}
@@ -357,13 +382,13 @@ function App() {
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="mt-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
             <h3 className="text-sm font-medium text-[#9099ac]">Total Models</h3>
             <p className="text-2xl font-bold text-white mt-1">{models.length}</p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">SDK Supported</h3>
+            <h3 className="text-sm font-medium text-[#9099ac]">SDK</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
               {models.filter((m) => m.sdk_support_timestamp).length}
             </p>
@@ -381,9 +406,15 @@ function App() {
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">Infra Proxy</h3>
+            <h3 className="text-sm font-medium text-[#9099ac]">Eval Proxy</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
-              {models.filter((m) => m.infra_litellm_timestamp).length}
+              {models.filter((m) => m.eval_proxy_timestamp).length}
+            </p>
+          </div>
+          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
+            <h3 className="text-sm font-medium text-[#9099ac]">Prod Proxy</h3>
+            <p className="text-2xl font-bold text-green-400 mt-1">
+              {models.filter((m) => m.prod_proxy_timestamp).length}
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
@@ -459,9 +490,17 @@ function App() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="infraPercent"
-                    name="Infra"
+                    dataKey="evalProxyPercent"
+                    name="Eval Proxy"
                     stroke="#ec4899"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="prodProxyPercent"
+                    name="Prod Proxy"
+                    stroke="#14b8a6"
                     strokeWidth={2}
                     dot={false}
                   />
@@ -543,9 +582,18 @@ function App() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="infraAvgDays"
-                    name="Infra"
+                    dataKey="evalProxyAvgDays"
+                    name="Eval Proxy"
                     stroke="#ec4899"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="prodProxyAvgDays"
+                    name="Prod Proxy"
+                    stroke="#14b8a6"
                     strokeWidth={2}
                     dot={false}
                     connectNulls
