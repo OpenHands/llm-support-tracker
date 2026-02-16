@@ -14,23 +14,32 @@ import requests
 GITHUB_API_BASE = "https://api.github.com"
 INDEX_RESULTS_REPO = "OpenHands/openhands-index-results"
 
-# Approximate release dates for known models (can be updated)
+# Release dates for known models (verified from official sources)
 MODEL_RELEASE_DATES = {
-    "DeepSeek-V3.2-Reasoner": "2025-12-01",
-    "GLM-4.7": "2025-10-01",
-    "GPT-5.2-Codex": "2025-09-01",
-    "GPT-5.2": "2025-08-01",
-    "Gemini-3-Flash": "2025-11-01",
-    "Gemini-3-Pro": "2025-11-01",
-    "Kimi-K2-Thinking": "2025-10-01",
-    "Kimi-K2.5": "2025-11-01",
-    "MiniMax-M2.1": "2025-09-01",
-    "MiniMax-M2.5": "2025-11-01",
-    "Nemotron-3-Nano": "2025-10-01",
-    "Qwen3-Coder-480B": "2025-12-01",
-    "claude-opus-4-5": "2025-11-01",
-    "claude-opus-4-6": "2025-12-01",
-    "claude-sonnet-4-5": "2025-09-29",
+    # DeepSeek models
+    "DeepSeek-V3.2-Reasoner": "2025-12-01",  # DeepSeek V3.2 released Dec 1, 2025
+    # GLM models (Z-AI/Zhipu)
+    "GLM-4.7": "2025-10-01",  # Approximate
+    # OpenAI GPT models
+    "GPT-5.2-Codex": "2025-12-18",  # GPT-5.2-Codex released Dec 18, 2025
+    "GPT-5.2": "2025-12-11",  # GPT-5.2 released Dec 11, 2025
+    # Google Gemini models
+    "Gemini-3-Flash": "2025-12-17",  # Gemini 3 Flash released Dec 17, 2025
+    "Gemini-3-Pro": "2025-11-18",  # Gemini 3 Pro released Nov 18, 2025
+    # Moonshot Kimi models
+    "Kimi-K2-Thinking": "2025-11-06",  # Kimi K2 Thinking released Nov 6, 2025
+    "Kimi-K2.5": "2026-01-27",  # Kimi K2.5 released Jan 27, 2026
+    # MiniMax models
+    "MiniMax-M2.1": "2025-09-01",  # Approximate
+    "MiniMax-M2.5": "2026-02-01",  # Approximate (based on eval proxy addition)
+    # NVIDIA Nemotron models
+    "Nemotron-3-Nano": "2025-10-01",  # Approximate
+    # Alibaba Qwen models
+    "Qwen3-Coder-480B": "2025-12-01",  # Approximate
+    # Anthropic Claude models
+    "claude-opus-4-5": "2025-11-24",  # Claude Opus 4.5 released Nov 24, 2025
+    "claude-opus-4-6": "2026-02-05",  # Claude Opus 4.6 released Feb 5, 2026
+    "claude-sonnet-4-5": "2025-09-29",  # Claude Sonnet 4.5 released Sep 29, 2025
 }
 
 

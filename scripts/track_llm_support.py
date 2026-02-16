@@ -89,10 +89,10 @@ def search_commits_for_model(
 
 def search_litellm_support(model_id: str) -> Optional[str]:
     """
-    Search for when a model was added to BerriAI/litellm.
+    Search for when a model was added to BerriAI/litellm's model_prices_and_context_window.json.
 
-    This searches the upstream litellm repository for when the model
-    was first added to model_prices_and_context_window.json.
+    This uses binary search through commit history via the GitHub API to find 
+    the first commit where the model appears in the model prices file.
 
     Args:
         model_id: The language model ID to search for
@@ -101,27 +101,79 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         ISO timestamp of when the model was added, or None if not found
     """
     headers = get_github_headers()
-
-    # Search for commits adding the model to litellm
-    search_url = f"{GITHUB_API_BASE}/search/commits"
-    query = f"repo:BerriAI/litellm {model_id}"
-    params = {"q": query, "sort": "author-date", "order": "asc", "per_page": 1}
-
+    repo = "BerriAI/litellm"
+    file_path = "model_prices_and_context_window.json"
+    model_lower = model_id.lower()
+    
+    # First, check if model exists in current version
+    current_url = f"https://raw.githubusercontent.com/{repo}/main/{file_path}"
     try:
-        response = requests.get(search_url, headers=headers, params=params, timeout=30)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("total_count", 0) > 0:
-                items = data.get("items", [])
-                if items:
-                    commit = items[0]
-                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                    if commit_date:
-                        return commit_date
-    except requests.RequestException as e:
-        print(f"Warning: Error searching litellm commits: {e}", file=sys.stderr)
-
-    return None
+        response = requests.get(current_url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            return None
+            
+        current_content = response.text.lower()
+        if model_lower not in current_content:
+            # Model not in current version, not supported
+            return None
+    except requests.RequestException:
+        return None
+    
+    # Get commits that modified the model prices file (paginate to get more history)
+    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
+    all_commits = []
+    page = 1
+    max_pages = 10  # Limit to 1000 commits
+    
+    while page <= max_pages:
+        params = {"path": file_path, "per_page": 100, "page": page}
+        try:
+            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            if response.status_code != 200:
+                break
+            commits = response.json()
+            if not commits:
+                break
+            all_commits.extend(commits)
+            if len(commits) < 100:
+                break
+            page += 1
+        except requests.RequestException:
+            break
+    
+    if not all_commits:
+        return None
+    
+    # Binary search to find the first commit where the model exists
+    # all_commits[0] is newest, all_commits[-1] is oldest
+    left, right = 0, len(all_commits) - 1
+    first_commit_with_model = all_commits[0]  # Default to newest
+    
+    while left <= right:
+        mid = (left + right) // 2
+        commit_sha = all_commits[mid].get("sha")
+        
+        # Get file content at this commit
+        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
+        try:
+            response = requests.get(file_url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                content = response.text.lower()
+                if model_lower in content:
+                    # Model exists at this commit, search older commits
+                    first_commit_with_model = all_commits[mid]
+                    left = mid + 1
+                else:
+                    # Model doesn't exist, search newer commits
+                    right = mid - 1
+            else:
+                # File doesn't exist at this commit, search newer
+                right = mid - 1
+        except requests.RequestException:
+            right = mid - 1
+    
+    # Return the date of the first commit where model was found
+    return first_commit_with_model.get("commit", {}).get("author", {}).get("date")
 
 
 def search_index_results_folder(model_id: str) -> Optional[str]:

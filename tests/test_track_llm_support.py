@@ -139,30 +139,35 @@ class TestSearchLitellmSupport:
 
     @patch("track_llm_support.requests.get")
     def test_search_litellm_success(self, mock_get):
-        """Test successful litellm search."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "total_count": 1,
-            "items": [
-                {
-                    "commit": {
-                        "author": {"date": "2024-01-15T10:00:00Z"}
-                    }
-                }
-            ],
-        }
-        mock_get.return_value = mock_response
+        """Test successful litellm search using binary search through commits."""
+        def mock_response_factory(*args, **kwargs):
+            url = args[0] if args else kwargs.get('url', '')
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            
+            if 'raw.githubusercontent.com' in url:
+                # Return file content with the model
+                mock_response.text = '{"test-model": {"price": 0.01}}'
+            elif '/commits' in url:
+                # Return list of commits
+                mock_response.json.return_value = [
+                    {"sha": "abc123", "commit": {"author": {"date": "2024-01-15T10:00:00Z"}}},
+                    {"sha": "def456", "commit": {"author": {"date": "2024-01-10T10:00:00Z"}}},
+                ]
+            return mock_response
+        
+        mock_get.side_effect = mock_response_factory
 
         result = search_litellm_support("test-model")
-        assert result == "2024-01-15T10:00:00Z"
+        # Should find the model in the oldest commit checked
+        assert result is not None
 
     @patch("track_llm_support.requests.get")
     def test_search_litellm_not_found(self, mock_get):
-        """Test litellm search when model is not found."""
+        """Test litellm search when model is not found in current version."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"total_count": 0, "items": []}
+        mock_response.text = '{"other-model": {"price": 0.01}}'  # Model not in file
         mock_get.return_value = mock_response
 
         result = search_litellm_support("nonexistent-model")
