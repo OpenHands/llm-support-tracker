@@ -331,6 +331,50 @@ def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
     return None
 
 
+def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:
+    """
+    Adjust a support timestamp to not be earlier than the model's release date.
+    
+    If the support infrastructure (e.g., wildcard routing) existed before the model
+    was released, the effective support date is the release date itself.
+    
+    Args:
+        timestamp: The detected support timestamp (ISO format)
+        release_date: The model's release date (ISO format)
+    
+    Returns:
+        The later of the two dates, or None if timestamp is None
+    """
+    if timestamp is None:
+        return None
+    
+    from datetime import datetime
+    
+    # Parse dates (handle various ISO formats)
+    def parse_date(date_str: str) -> datetime:
+        # Try different formats
+        for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d"]:
+            try:
+                return datetime.strptime(date_str.replace("+00:00", "Z").split(".")[0] + "Z", "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                continue
+        # Fallback: just parse the date part
+        return datetime.strptime(date_str[:10], "%Y-%m-%d")
+    
+    try:
+        support_dt = parse_date(timestamp)
+        release_dt = parse_date(release_date)
+        
+        # If support was available before release, use release date
+        if support_dt < release_dt:
+            # Return release date at midnight UTC
+            return release_date + "T00:00:00Z" if "T" not in release_date else release_date
+        
+        return timestamp
+    except (ValueError, TypeError):
+        return timestamp
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -358,34 +402,34 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     sdk_timestamp = search_commits_for_model(
         REPOS["sdk"], model_id, SEARCH_PATHS["sdk"]
     )
-    result["sdk_support_timestamp"] = sdk_timestamp
+    result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
 
     # Search for frontend support
     print(f"Searching for {model_id} in OpenHands frontend...")
     frontend_timestamp = search_commits_for_model(
         REPOS["frontend"], model_id, SEARCH_PATHS["frontend"]
     )
-    result["frontend_support_timestamp"] = frontend_timestamp
+    result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
 
     # Search for index results
     print(f"Searching for {model_id} in openhands-index-results...")
     index_timestamp = search_index_results_folder(model_id)
-    result["index_results_timestamp"] = index_timestamp
+    result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
     # Search for eval proxy support
     print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
     eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
-    result["eval_proxy_timestamp"] = eval_proxy_timestamp
+    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
 
     # Search for prod proxy support
     print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
     prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
-    result["prod_proxy_timestamp"] = prod_proxy_timestamp
+    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
 
     # Search for upstream litellm support
     print(f"Searching for {model_id} in BerriAI/litellm...")
     litellm_timestamp = search_litellm_support(model_id)
-    result["litellm_support_timestamp"] = litellm_timestamp
+    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
 
     return result
 
