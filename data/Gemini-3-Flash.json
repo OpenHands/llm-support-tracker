@@ -4,6 +4,6 @@
   "sdk_support_timestamp": null,
   "frontend_support_timestamp": null,
   "index_results_timestamp": "2026-02-10T10:52:36Z",
-  "infra_litellm_timestamp": "2026-02-09T17:09:13.000+01:00",
+  "infra_litellm_timestamp": null,
   "litellm_support_timestamp": "2024-11-07T23:11:14.000-06:00"
 }
