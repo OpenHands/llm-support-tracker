@@ -375,6 +375,22 @@ def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> 
         return timestamp
 
 
+def get_earliest_timestamp(*timestamps: Optional[str]) -> Optional[str]:
+    """
+    Get the earliest non-None timestamp from a list of timestamps.
+    """
+    from datetime import datetime
+    
+    def parse_date(d: str) -> datetime:
+        return datetime.strptime(d[:10], "%Y-%m-%d")
+    
+    valid_timestamps = [t for t in timestamps if t is not None]
+    if not valid_timestamps:
+        return None
+    
+    return min(valid_timestamps, key=lambda t: parse_date(t))
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -429,7 +445,20 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     # Search for upstream litellm support
     print(f"Searching for {model_id} in BerriAI/litellm...")
     litellm_timestamp = search_litellm_support(model_id)
-    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
+    litellm_timestamp = adjust_timestamp_to_release(litellm_timestamp, release_date)
+    
+    # LiteLLM must be supported before or at the same time as the proxies
+    # (since proxies use LiteLLM). If our search found a later date, use the
+    # earliest proxy date instead.
+    if litellm_timestamp and (result["eval_proxy_timestamp"] or result["prod_proxy_timestamp"]):
+        earliest_proxy = get_earliest_timestamp(
+            result["eval_proxy_timestamp"], 
+            result["prod_proxy_timestamp"]
+        )
+        if earliest_proxy:
+            litellm_timestamp = get_earliest_timestamp(litellm_timestamp, earliest_proxy)
+    
+    result["litellm_support_timestamp"] = litellm_timestamp
 
     return result
 
