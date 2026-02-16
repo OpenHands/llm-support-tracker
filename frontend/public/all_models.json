@@ -7,7 +7,7 @@
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-12-01T00:00:00Z",
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2025-12-01T00:00:00Z"
+    "litellm_support_timestamp": "2026-01-14T05:22:50.000+07:00"
   },
   {
     "model_id": "GLM-4.7",
@@ -27,7 +27,7 @@
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-09-01T00:00:00Z",
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2025-09-01T00:00:00Z"
+    "litellm_support_timestamp": "2026-01-13T19:19:47.000-03:00"
   },
   {
     "model_id": "GPT-5.2",
@@ -67,7 +67,7 @@
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-10-01T00:00:00Z",
     "prod_proxy_timestamp": "2025-11-10T14:02:25Z",
-    "litellm_support_timestamp": "2025-10-01T00:00:00Z"
+    "litellm_support_timestamp": "2025-11-11T02:56:06.000+03:00"
   },
   {
     "model_id": "Kimi-K2.5",
@@ -87,7 +87,7 @@
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-09-01T00:00:00Z",
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2025-09-01T00:00:00Z"
+    "litellm_support_timestamp": "2025-11-11T19:11:22.000-08:00"
   },
   {
     "model_id": "MiniMax-M2.5",
@@ -97,7 +97,7 @@
     "index_results_timestamp": "2026-02-12T01:50:30Z",
     "eval_proxy_timestamp": "2026-02-10T10:57:06Z",
     "prod_proxy_timestamp": "2026-02-11T16:00:34Z",
-    "litellm_support_timestamp": "2026-02-10T10:57:06Z"
+    "litellm_support_timestamp": "2026-02-13T18:32:12.000+05:30"
   },
   {
     "model_id": "Nemotron-3-Nano",
