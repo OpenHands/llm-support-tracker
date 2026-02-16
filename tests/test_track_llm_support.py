@@ -199,19 +199,32 @@ class TestSearchInfraProxy:
 
     @patch("track_llm_support.requests.get")
     def test_search_prod_proxy_not_found(self, mock_get):
-        """Test prod proxy search when model is not found."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        # Return commits that don't mention the model
-        mock_response.json.return_value = [
-            {
-                "commit": {
-                    "message": "Add other-model to prod proxy",
-                    "author": {"date": "2024-01-15T10:00:00Z"}
+        """Test prod proxy search when model is not found and no wildcards match."""
+        import base64
+        
+        def mock_response_factory(*args, **kwargs):
+            url = args[0] if args else kwargs.get('url', '')
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            
+            if '/commits' in url:
+                # Return commits that don't mention the model
+                mock_response.json.return_value = [
+                    {
+                        "commit": {
+                            "message": "Add other-model to prod proxy",
+                            "author": {"date": "2024-01-15T10:00:00Z"}
+                        }
+                    }
+                ]
+            elif '/contents' in url:
+                # Return file content without any wildcards
+                mock_response.json.return_value = {
+                    "content": base64.b64encode(b"model_list: []").decode()
                 }
-            }
-        ]
-        mock_get.return_value = mock_response
+            return mock_response
+        
+        mock_get.side_effect = mock_response_factory
 
         result = search_infra_proxy("nonexistent-model", "prod_proxy")
         assert result is None

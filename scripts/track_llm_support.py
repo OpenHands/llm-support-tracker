@@ -179,11 +179,13 @@ def search_index_results_folder(model_id: str) -> Optional[str]:
     return None
 
 
-def get_provider_from_model(model_id: str) -> Optional[str]:
+def get_providers_from_model(model_id: str) -> list[str]:
     """
-    Determine the provider from a model ID for wildcard routing lookup.
+    Determine possible providers from a model ID for wildcard routing lookup.
+    Returns a list of providers to check (in order of preference).
     """
     model_lower = model_id.lower()
+    providers = []
     
     # Map model prefixes to provider wildcards
     # These are the wildcards configured in the infra litellm.yaml
@@ -196,15 +198,26 @@ def get_provider_from_model(model_id: str) -> Optional[str]:
         "qwen": "together_ai",  # Qwen models often via together_ai
         "llama": "together_ai",
         "kimi": "moonshot",
-        # Models that use hosted_vllm or openrouter don't have wildcards
-        # They need explicit configuration
     }
     
     for prefix, provider in provider_mappings.items():
         if model_lower.startswith(prefix):
-            return provider
+            providers.append(provider)
+            break
     
-    return None
+    # Many models can also be accessed via hosted_vllm or openrouter wildcards
+    # These are fallback options that support a wide range of models
+    providers.extend(["hosted_vllm", "openrouter"])
+    
+    return providers
+
+
+def get_provider_from_model(model_id: str) -> Optional[str]:
+    """
+    Determine the primary provider from a model ID for wildcard routing lookup.
+    """
+    providers = get_providers_from_model(model_id)
+    return providers[0] if providers else None
 
 
 def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]:
@@ -227,14 +240,28 @@ def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]
             if wildcard_pattern not in content:
                 return None
             
-            # Wildcard exists, find when it was first added by checking commit history
+            # Wildcard exists, find when it was first added
+            # Search commit messages for when this provider was added
             commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
             params = {"path": path, "per_page": 100}
             
             response = requests.get(commits_url, headers=headers, params=params, timeout=30)
             if response.status_code == 200:
                 commits = response.json()
-                # Return the oldest commit (file creation or first commit with wildcard)
+                
+                # Look for commits that mention this provider
+                provider_commits = []
+                for commit in commits:
+                    message = commit.get("commit", {}).get("message", "").lower()
+                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
+                    if commit_date and provider.lower() in message:
+                        provider_commits.append(commit_date)
+                
+                # If found commits mentioning the provider, return the oldest
+                if provider_commits:
+                    return provider_commits[-1]
+                
+                # Otherwise, assume it was in the initial file creation
                 if commits:
                     return commits[-1].get("commit", {}).get("author", {}).get("date")
     except requests.RequestException:
@@ -294,8 +321,9 @@ def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
         print(f"Warning: Error searching {proxy_type} commits: {e}", file=sys.stderr)
 
     # If no explicit mention, check for provider wildcard support
-    provider = get_provider_from_model(model_id)
-    if provider:
+    # Try all possible providers (primary provider first, then fallbacks like hosted_vllm, openrouter)
+    providers = get_providers_from_model(model_id)
+    for provider in providers:
         wildcard_date = check_wildcard_in_file(repo, path, provider)
         if wildcard_date:
             return wildcard_date
