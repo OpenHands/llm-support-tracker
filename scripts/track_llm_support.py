@@ -186,16 +186,18 @@ def get_provider_from_model(model_id: str) -> Optional[str]:
     model_lower = model_id.lower()
     
     # Map model prefixes to provider wildcards
+    # These are the wildcards configured in the infra litellm.yaml
     provider_mappings = {
         "claude": "anthropic",
         "gpt": "openai",
         "gemini": "gemini",
         "deepseek": "deepseek",
         "mistral": "mistral",
-        "qwen": "together_ai",  # Qwen models often via together
+        "qwen": "together_ai",  # Qwen models often via together_ai
         "llama": "together_ai",
         "kimi": "moonshot",
-        "glm": "zhipu",  # GLM models from Zhipu
+        # Models that use hosted_vllm or openrouter don't have wildcards
+        # They need explicit configuration
     }
     
     for prefix, provider in provider_mappings.items():
@@ -205,12 +207,49 @@ def get_provider_from_model(model_id: str) -> Optional[str]:
     return None
 
 
+def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]:
+    """
+    Check if a provider wildcard exists in the current file and find when it was added.
+    
+    Returns the date of the first commit that added the wildcard pattern.
+    """
+    headers = get_github_headers()
+    
+    # First check if the wildcard exists in the current file
+    file_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/{path}"
+    try:
+        response = requests.get(file_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            import base64
+            content = base64.b64decode(response.json().get("content", "")).decode("utf-8")
+            wildcard_pattern = f'{provider}/*'
+            
+            if wildcard_pattern not in content:
+                return None
+            
+            # Wildcard exists, find when it was first added by checking commit history
+            commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
+            params = {"path": path, "per_page": 100}
+            
+            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                commits = response.json()
+                # Return the oldest commit (file creation or first commit with wildcard)
+                if commits:
+                    return commits[-1].get("commit", {}).get("author", {}).get("date")
+    except requests.RequestException:
+        pass
+    
+    return None
+
+
 def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
     """
     Search for when a model was added to the infra proxy configuration.
 
-    This searches commits that modified the litellm.yaml file and checks
-    if the commit message mentions the model.
+    This searches:
+    1. Commit messages for explicit model name mentions
+    2. Provider wildcard routing (e.g., anthropic/* for claude models)
 
     Args:
         model_id: The language model ID to search for
@@ -238,18 +277,28 @@ def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
             
             for commit in commits:
                 message = commit.get("commit", {}).get("message", "").lower()
+                commit_date = commit.get("commit", {}).get("author", {}).get("date")
+                
+                if not commit_date:
+                    continue
+                    
                 # Check if model name appears in commit message
                 if model_lower in message:
-                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                    if commit_date:
-                        matching_commits.append(commit_date)
+                    matching_commits.append(commit_date)
             
-            # Return the oldest matching commit (first time model was added)
+            # If found explicit model mention, return it
             if matching_commits:
                 return matching_commits[-1]  # Last in list is oldest
                 
     except requests.RequestException as e:
         print(f"Warning: Error searching {proxy_type} commits: {e}", file=sys.stderr)
+
+    # If no explicit mention, check for provider wildcard support
+    provider = get_provider_from_model(model_id)
+    if provider:
+        wildcard_date = check_wildcard_in_file(repo, path, provider)
+        if wildcard_date:
+            return wildcard_date
 
     return None
 
