@@ -49,6 +49,52 @@ def get_github_headers() -> dict:
     return headers
 
 
+def get_model_search_terms(model_id: str) -> list[str]:
+    """
+    Get a list of search terms for a model, including the full name and family names.
+    
+    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3"]
+    """
+    import re
+    
+    terms = [model_id]
+    
+    # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
+    suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
+    for suffix in suffixes:
+        if model_id.endswith(suffix):
+            base = model_id[:-len(suffix)]
+            if base not in terms:
+                terms.append(base)
+    
+    # Also try with spaces instead of hyphens
+    spaced = model_id.replace("-", " ")
+    if spaced not in terms:
+        terms.append(spaced)
+    
+    # For versioned models like "claude-sonnet-4-5", also try "claude-sonnet-4"
+    version_match = re.match(r"(.+)-(\d+)-(\d+)$", model_id)
+    if version_match:
+        base_with_major = f"{version_match.group(1)}-{version_match.group(2)}"
+        if base_with_major not in terms:
+            terms.append(base_with_major)
+    
+    # For models like "Qwen3-Coder-480B", also try "qwen-3-coder" (lowercase with hyphen)
+    # Convert "Qwen3" to "qwen-3", "GPT5" to "gpt-5", etc.
+    normalized = re.sub(r'([a-zA-Z])(\d)', r'\1-\2', model_id).lower()
+    if normalized not in terms:
+        terms.append(normalized)
+    
+    # Also try just the model family name (e.g., "Qwen" from "Qwen3-Coder-480B")
+    family_match = re.match(r'^([A-Za-z]+)', model_id)
+    if family_match:
+        family = family_match.group(1)
+        if family not in terms and len(family) > 2:
+            terms.append(family)
+    
+    return terms
+
+
 def search_commits_for_model(
     repo: str, model_id: str, paths: list[str]
 ) -> Optional[str]:
@@ -64,27 +110,34 @@ def search_commits_for_model(
         ISO timestamp of the first commit mentioning the model, or None if not found
     """
     headers = get_github_headers()
-
-    # Try searching commits with the model ID in the message
     search_url = f"{GITHUB_API_BASE}/search/commits"
-    query = f"repo:{repo} {model_id}"
-    params = {"q": query, "sort": "author-date", "order": "asc", "per_page": 1}
+    
+    # Get all search terms for this model
+    search_terms = get_model_search_terms(model_id)
+    
+    earliest_date = None
+    
+    for term in search_terms:
+        query = f"repo:{repo} {term}"
+        params = {"q": query, "sort": "author-date", "order": "asc", "per_page": 1}
 
-    try:
-        response = requests.get(search_url, headers=headers, params=params, timeout=30)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("total_count", 0) > 0:
-                items = data.get("items", [])
-                if items:
-                    commit = items[0]
-                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                    if commit_date:
-                        return commit_date
-    except requests.RequestException as e:
-        print(f"Warning: Error searching commits in {repo}: {e}", file=sys.stderr)
+        try:
+            response = requests.get(search_url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("total_count", 0) > 0:
+                    items = data.get("items", [])
+                    if items:
+                        commit = items[0]
+                        commit_date = commit.get("commit", {}).get("author", {}).get("date")
+                        if commit_date:
+                            # Keep the earliest date found
+                            if earliest_date is None or commit_date < earliest_date:
+                                earliest_date = commit_date
+        except requests.RequestException as e:
+            print(f"Warning: Error searching commits in {repo}: {e}", file=sys.stderr)
 
-    return None
+    return earliest_date
 
 
 def search_litellm_support(model_id: str) -> Optional[str]:
@@ -114,16 +167,15 @@ def search_litellm_support(model_id: str) -> Optional[str]:
             
         current_content = response.text.lower()
         if model_lower not in current_content:
-            # Model not in current version, not supported
             return None
     except requests.RequestException:
         return None
     
-    # Get commits that modified the model prices file (paginate to get more history)
+    # Get commits that modified the model prices file
     commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
     all_commits = []
     page = 1
-    max_pages = 10  # Limit to 1000 commits
+    max_pages = 10
     
     while page <= max_pages:
         params = {"path": file_path, "per_page": 100, "page": page}
@@ -145,34 +197,28 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         return None
     
     # Binary search to find the first commit where the model exists
-    # all_commits[0] is newest, all_commits[-1] is oldest
     left, right = 0, len(all_commits) - 1
-    first_commit_with_model = all_commits[0]  # Default to newest
+    first_commit_with_model = all_commits[0]
     
     while left <= right:
         mid = (left + right) // 2
         commit_sha = all_commits[mid].get("sha")
         
-        # Get file content at this commit
         file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
         try:
             response = requests.get(file_url, headers=headers, timeout=30)
             if response.status_code == 200:
                 content = response.text.lower()
                 if model_lower in content:
-                    # Model exists at this commit, search older commits
                     first_commit_with_model = all_commits[mid]
                     left = mid + 1
                 else:
-                    # Model doesn't exist, search newer commits
                     right = mid - 1
             else:
-                # File doesn't exist at this commit, search newer
                 right = mid - 1
         except requests.RequestException:
             right = mid - 1
     
-    # Return the date of the first commit where model was found
     return first_commit_with_model.get("commit", {}).get("author", {}).get("date")
 
 

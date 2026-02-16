@@ -247,18 +247,6 @@ function App() {
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
-                    onClick={() => handleSort('sdk_support_timestamp')}
-                  >
-                    SDK Support <SortIcon field="sdk_support_timestamp" />
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
-                    onClick={() => handleSort('frontend_support_timestamp')}
-                  >
-                    Frontend <SortIcon field="frontend_support_timestamp" />
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
                     onClick={() => handleSort('litellm_support_timestamp')}
                   >
                     LiteLLM <SortIcon field="litellm_support_timestamp" />
@@ -274,6 +262,18 @@ function App() {
                     onClick={() => handleSort('prod_proxy_timestamp')}
                   >
                     Prod Proxy <SortIcon field="prod_proxy_timestamp" />
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
+                    onClick={() => handleSort('sdk_support_timestamp')}
+                  >
+                    SDK <SortIcon field="sdk_support_timestamp" />
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
+                    onClick={() => handleSort('frontend_support_timestamp')}
+                  >
+                    Frontend <SortIcon field="frontend_support_timestamp" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
@@ -296,32 +296,6 @@ function App() {
                     </td>
                     <td className="px-4 py-3 text-[#9099ac]">
                       {formatDate(model.release_date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <StatusBadge timestamp={model.sdk_support_timestamp} />
-                        {model.sdk_support_timestamp && (
-                          <span className="text-xs text-[#9099ac]">
-                            {formatDate(model.sdk_support_timestamp)}
-                            <span className="ml-1 text-blue-400">
-                              ({getDaysDiff(model.sdk_support_timestamp, model.release_date)})
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <StatusBadge timestamp={model.frontend_support_timestamp} />
-                        {model.frontend_support_timestamp && (
-                          <span className="text-xs text-[#9099ac]">
-                            {formatDate(model.frontend_support_timestamp)}
-                            <span className="ml-1 text-blue-400">
-                              ({getDaysDiff(model.frontend_support_timestamp, model.release_date)})
-                            </span>
-                          </span>
-                        )}
-                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
@@ -364,6 +338,32 @@ function App() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
+                        <StatusBadge timestamp={model.sdk_support_timestamp} />
+                        {model.sdk_support_timestamp && (
+                          <span className="text-xs text-[#9099ac]">
+                            {formatDate(model.sdk_support_timestamp)}
+                            <span className="ml-1 text-blue-400">
+                              ({getDaysDiff(model.sdk_support_timestamp, model.release_date)})
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge timestamp={model.frontend_support_timestamp} />
+                        {model.frontend_support_timestamp && (
+                          <span className="text-xs text-[#9099ac]">
+                            {formatDate(model.frontend_support_timestamp)}
+                            <span className="ml-1 text-blue-400">
+                              ({getDaysDiff(model.frontend_support_timestamp, model.release_date)})
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
                         <StatusBadge timestamp={model.index_results_timestamp} />
                         {model.index_results_timestamp && (
                           <span className="text-xs text-[#9099ac]">
@@ -388,18 +388,6 @@ function App() {
             <p className="text-2xl font-bold text-white mt-1">{models.length}</p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">SDK</h3>
-            <p className="text-2xl font-bold text-green-400 mt-1">
-              {models.filter((m) => m.sdk_support_timestamp).length}
-            </p>
-          </div>
-          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">Frontend</h3>
-            <p className="text-2xl font-bold text-green-400 mt-1">
-              {models.filter((m) => m.frontend_support_timestamp).length}
-            </p>
-          </div>
-          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
             <h3 className="text-sm font-medium text-[#9099ac]">LiteLLM</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
               {models.filter((m) => m.litellm_support_timestamp).length}
@@ -415,6 +403,18 @@ function App() {
             <h3 className="text-sm font-medium text-[#9099ac]">Prod Proxy</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
               {models.filter((m) => m.prod_proxy_timestamp).length}
+            </p>
+          </div>
+          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
+            <h3 className="text-sm font-medium text-[#9099ac]">SDK</h3>
+            <p className="text-2xl font-bold text-green-400 mt-1">
+              {models.filter((m) => m.sdk_support_timestamp).length}
+            </p>
+          </div>
+          <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
+            <h3 className="text-sm font-medium text-[#9099ac]">Frontend</h3>
+            <p className="text-2xl font-bold text-green-400 mt-1">
+              {models.filter((m) => m.frontend_support_timestamp).length}
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
@@ -466,22 +466,6 @@ function App() {
                   <Legend />
                   <Line
                     type="monotone"
-                    dataKey="sdkPercent"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendPercent"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
                     dataKey="litellmPercent"
                     name="LiteLLM"
                     stroke="#f59e0b"
@@ -501,6 +485,22 @@ function App() {
                     dataKey="prodProxyPercent"
                     name="Prod Proxy"
                     stroke="#14b8a6"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="sdkPercent"
+                    name="SDK"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="frontendPercent"
+                    name="Frontend"
+                    stroke="#22c55e"
                     strokeWidth={2}
                     dot={false}
                   />
@@ -555,24 +555,6 @@ function App() {
                   <Legend />
                   <Line
                     type="monotone"
-                    dataKey="sdkAvgDays"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendAvgDays"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
                     dataKey="litellmAvgDays"
                     name="LiteLLM"
                     stroke="#f59e0b"
@@ -594,6 +576,24 @@ function App() {
                     dataKey="prodProxyAvgDays"
                     name="Prod Proxy"
                     stroke="#14b8a6"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="sdkAvgDays"
+                    name="SDK"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="frontendAvgDays"
+                    name="Frontend"
+                    stroke="#22c55e"
                     strokeWidth={2}
                     dot={false}
                     connectNulls
