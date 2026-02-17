@@ -4,7 +4,7 @@
   "sdk_support_timestamp": "2025-09-29T13:51:12.000-04:00",
   "frontend_support_timestamp": "2025-09-29T00:00:00Z",
   "index_results_timestamp": "2026-02-10T10:52:36Z",
-  "eval_proxy_timestamp": "2026-02-06T12:26:15Z",
-  "prod_proxy_timestamp": "2025-09-29T17:48:37Z",
+  "eval_proxy_timestamp": null,
+  "prod_proxy_timestamp": null,
   "litellm_support_timestamp": "2025-09-29T20:09:00Z"
 }
