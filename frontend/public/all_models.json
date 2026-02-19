@@ -17,7 +17,7 @@
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2026-01-03T19:14:19Z"
+    "litellm_support_timestamp": "2026-01-06T09:59:42Z"
   },
   {
     "model_id": "GPT-5.2-Codex",
@@ -43,7 +43,7 @@
     "model_id": "Gemini-3-Flash",
     "release_date": "2025-12-17",
     "sdk_support_timestamp": null,
-    "frontend_support_timestamp": "2025-12-17T00:00:00Z",
+    "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
@@ -82,12 +82,12 @@
   {
     "model_id": "MiniMax-M2.1",
     "release_date": "2025-09-01",
-    "sdk_support_timestamp": "2025-12-19T16:20:32.000-05:00",
-    "frontend_support_timestamp": "2026-02-11T16:57:22.000Z",
+    "sdk_support_timestamp": null,
+    "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2025-12-23T10:40:06Z"
+    "litellm_support_timestamp": "2025-12-23T16:19:27Z"
   },
   {
     "model_id": "MiniMax-M2.5",
@@ -112,8 +112,8 @@
   {
     "model_id": "Qwen3-Coder-480B",
     "release_date": "2025-12-01",
-    "sdk_support_timestamp": "2026-02-03T23:18:45.000-03:00",
-    "frontend_support_timestamp": null,
+    "sdk_support_timestamp": "2026-01-13T17:10:01.000-05:00",
+    "frontend_support_timestamp": "2025-12-01T00:00:00Z",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
@@ -122,18 +122,18 @@
   {
     "model_id": "claude-opus-4-5",
     "release_date": "2025-11-24",
-    "sdk_support_timestamp": null,
+    "sdk_support_timestamp": "2025-11-25T14:32:24.000-03:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2025-11-24T22:30:36Z"
+    "litellm_support_timestamp": "2025-11-25T13:19:52Z"
   },
   {
     "model_id": "claude-opus-4-6",
     "release_date": "2026-02-05",
-    "sdk_support_timestamp": "2026-02-05T00:00:00Z",
-    "frontend_support_timestamp": "2026-02-05T00:00:00Z",
+    "sdk_support_timestamp": null,
+    "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
