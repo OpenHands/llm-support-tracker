@@ -1,8 +1,8 @@
 {
   "model_id": "Qwen3-Coder-Next",
   "release_date": "2025-01-01",
-  "sdk_support_timestamp": null,
-  "frontend_support_timestamp": null,
+  "sdk_support_timestamp": "2026-01-13T17:10:01.000-05:00",
+  "frontend_support_timestamp": "2025-07-27T00:53:55.000-04:00",
   "index_results_timestamp": "2026-02-24T23:02:45Z",
   "eval_proxy_timestamp": null,
   "prod_proxy_timestamp": null,
