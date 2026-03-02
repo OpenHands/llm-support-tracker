@@ -473,6 +473,49 @@ def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> 
         return timestamp
 
 
+def adjust_frontend_to_sdk_timestamp(frontend_timestamp: Optional[str], sdk_timestamp: Optional[str]) -> Optional[str]:
+    """
+    Adjust frontend support timestamp to not be earlier than SDK support timestamp.
+    
+    Frontend support depends on SDK support, so it cannot exist before SDK support.
+    If frontend timestamp is earlier than SDK timestamp, use SDK timestamp instead.
+    
+    Args:
+        frontend_timestamp: The detected frontend support timestamp (ISO format)
+        sdk_timestamp: The SDK support timestamp (ISO format)
+    
+    Returns:
+        The later of the two dates, or None if frontend_timestamp is None
+    """
+    if frontend_timestamp is None:
+        return None
+    
+    if sdk_timestamp is None:
+        return frontend_timestamp
+    
+    from datetime import datetime
+    
+    def parse_date(date_str: str) -> datetime:
+        for fmt in ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d"]:
+            try:
+                return datetime.strptime(date_str.replace("+00:00", "Z").split(".")[0] + "Z", "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                continue
+        return datetime.strptime(date_str[:10], "%Y-%m-%d")
+    
+    try:
+        frontend_dt = parse_date(frontend_timestamp)
+        sdk_dt = parse_date(sdk_timestamp)
+        
+        # Frontend cannot be supported before SDK
+        if frontend_dt < sdk_dt:
+            return sdk_timestamp
+        
+        return frontend_timestamp
+    except (ValueError, TypeError):
+        return frontend_timestamp
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -507,7 +550,11 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     frontend_timestamp = search_commits_for_model(
         REPOS["frontend"], model_id, SEARCH_PATHS["frontend"]
     )
-    result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
+    frontend_timestamp = adjust_timestamp_to_release(frontend_timestamp, release_date)
+    # Ensure frontend support is not before SDK support (frontend depends on SDK)
+    result["frontend_support_timestamp"] = adjust_frontend_to_sdk_timestamp(
+        frontend_timestamp, result["sdk_support_timestamp"]
+    )
 
     # Search for index results
     print(f"Searching for {model_id} in openhands-index-results...")

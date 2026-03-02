@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from track_llm_support import (
+    adjust_frontend_to_sdk_timestamp,
     get_github_headers,
     search_commits_for_model,
     search_index_results_folder,
@@ -235,6 +236,54 @@ class TestSearchInfraProxy:
         assert result is None
 
 
+class TestAdjustFrontendToSdkTimestamp:
+    """Tests for adjust_frontend_to_sdk_timestamp function."""
+
+    def test_frontend_after_sdk_unchanged(self):
+        """Test that frontend timestamp after SDK is unchanged."""
+        frontend = "2024-01-25T10:00:00Z"
+        sdk = "2024-01-20T10:00:00Z"
+        result = adjust_frontend_to_sdk_timestamp(frontend, sdk)
+        assert result == frontend
+
+    def test_frontend_before_sdk_adjusted(self):
+        """Test that frontend timestamp before SDK is adjusted to SDK timestamp."""
+        frontend = "2024-01-15T10:00:00Z"
+        sdk = "2024-01-20T10:00:00Z"
+        result = adjust_frontend_to_sdk_timestamp(frontend, sdk)
+        assert result == sdk
+
+    def test_frontend_none_returns_none(self):
+        """Test that None frontend returns None."""
+        result = adjust_frontend_to_sdk_timestamp(None, "2024-01-20T10:00:00Z")
+        assert result is None
+
+    def test_sdk_none_returns_frontend(self):
+        """Test that None SDK returns frontend unchanged."""
+        frontend = "2024-01-15T10:00:00Z"
+        result = adjust_frontend_to_sdk_timestamp(frontend, None)
+        assert result == frontend
+
+    def test_both_none_returns_none(self):
+        """Test that both None returns None."""
+        result = adjust_frontend_to_sdk_timestamp(None, None)
+        assert result is None
+
+    def test_different_timezone_formats(self):
+        """Test that different timezone formats are handled correctly."""
+        # Frontend is before SDK when normalized to same timezone
+        frontend = "2025-12-01T00:00:00Z"
+        sdk = "2025-12-20T05:32:55.000-08:00"
+        result = adjust_frontend_to_sdk_timestamp(frontend, sdk)
+        assert result == sdk
+
+    def test_same_timestamp_unchanged(self):
+        """Test that same timestamps return frontend unchanged."""
+        timestamp = "2024-01-20T10:00:00Z"
+        result = adjust_frontend_to_sdk_timestamp(timestamp, timestamp)
+        assert result == timestamp
+
+
 class TestTrackLlmSupport:
     """Tests for track_llm_support function."""
 
@@ -293,6 +342,33 @@ class TestTrackLlmSupport:
         assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
         assert result["litellm_support_timestamp"] is None
+
+    @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support.search_infra_proxy")
+    @patch("track_llm_support.search_index_results_folder")
+    @patch("track_llm_support.search_commits_for_model")
+    def test_track_llm_support_frontend_before_sdk_adjusted(
+        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
+    ):
+        """Test that frontend timestamp before SDK is adjusted to SDK timestamp.
+        
+        This tests the fix for issue #5: DeepSeek-V3.2-Reasoner had frontend support
+        timestamp (2025-12-01) before SDK support (2025-12-20), which is incorrect
+        since frontend depends on SDK support.
+        """
+        mock_search_commits.side_effect = [
+            "2024-01-20T10:00:00Z",  # SDK
+            "2024-01-15T10:00:00Z",  # Frontend (incorrectly before SDK)
+        ]
+        mock_search_index.return_value = None
+        mock_search_infra.side_effect = [None, None]
+        mock_search_litellm.return_value = None
+
+        result = track_llm_support("test-model", "2024-01-10")
+
+        assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
+        # Frontend should be adjusted to SDK timestamp since it can't be before
+        assert result["frontend_support_timestamp"] == "2024-01-20T10:00:00Z"
 
 
 class TestOutputFormat:
