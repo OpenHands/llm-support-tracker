@@ -18,6 +18,7 @@ from track_llm_support import (
     search_index_results_folder,
     search_infra_proxy,
     search_litellm_support,
+    find_litellm_versions_supporting_model,
     track_llm_support,
 )
 
@@ -258,73 +259,59 @@ class TestSearchLitellmSupport:
 class TestSearchInfraProxy:
     """Tests for search_infra_proxy function."""
 
-    @patch("track_llm_support.requests.get")
-    def test_search_eval_proxy_success(self, mock_get):
-        """Test successful eval proxy search."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        # The new implementation uses commits API which returns a list of commits
-        mock_response.json.return_value = [
-            {
-                "commit": {
-                    "message": "Add test-model to eval proxy",
-                    "author": {"date": "2024-01-15T10:00:00Z"}
-                }
-            },
-            {
-                "commit": {
-                    "message": "Initial commit",
-                    "author": {"date": "2024-01-10T10:00:00Z"}
-                }
-            }
-        ]
-        mock_get.return_value = mock_response
-
-        result = search_infra_proxy("test-model", "eval_proxy")
-        assert result == "2024-01-15T10:00:00Z"
-
-    @patch("track_llm_support.requests.get")
-    def test_search_prod_proxy_not_found(self, mock_get):
-        """Test prod proxy search when model is not found and no wildcards match."""
-        import base64
+    @patch("track_llm_support._get_infra_repo")
+    def test_search_eval_proxy_success(self, mock_get_repo):
+        """Test successful eval proxy search with valid versions."""
+        # Mock the infra cache with version history
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.79.0"),  # oldest, has valid version
+                ("2024-01-15T10:00:00Z", "v1.80.0-stable"),
+            ],
+            "prod_proxy_history": [],
+        }
         
-        def mock_response_factory(*args, **kwargs):
-            url = args[0] if args else kwargs.get('url', '')
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            
-            if '/commits' in url:
-                # Return commits that don't mention the model
-                mock_response.json.return_value = [
-                    {
-                        "commit": {
-                            "message": "Add other-model to prod proxy",
-                            "author": {"date": "2024-01-15T10:00:00Z"}
-                        }
-                    }
-                ]
-            elif '/contents' in url:
-                # Return file content without any wildcards
-                mock_response.json.return_value = {
-                    "content": base64.b64encode(b"model_list: []").decode()
-                }
-            return mock_response
+        # Valid versions that support the model
+        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
         
-        mock_get.side_effect = mock_response_factory
+        result = search_infra_proxy("test-model", "eval_proxy", valid_versions)
+        assert result == "2024-01-10T10:00:00Z"  # Earliest commit with valid version
 
-        result = search_infra_proxy("nonexistent-model", "prod_proxy")
+    @patch("track_llm_support._get_infra_repo")
+    def test_search_prod_proxy_not_found(self, mock_get_repo):
+        """Test prod proxy search when no valid versions were deployed."""
+        # Mock the infra cache with version history that doesn't match
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [],
+            "prod_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.70.0"),  # Not in valid versions
+                ("2024-01-15T10:00:00Z", "v1.71.0"),
+            ],
+        }
+        
+        # Valid versions that don't match what's deployed
+        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
+        
+        result = search_infra_proxy("test-model", "prod_proxy", valid_versions)
+        assert result is None
+    
+    def test_search_infra_proxy_no_valid_versions(self):
+        """Test that None is returned when valid_versions is None."""
+        result = search_infra_proxy("test-model", "eval_proxy", None)
         assert result is None
 
 
 class TestTrackLlmSupport:
     """Tests for track_llm_support function."""
 
-    @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support._get_litellm_repo")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
+        self, mock_search_commits, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_commits.side_effect = [
@@ -336,7 +323,15 @@ class TestTrackLlmSupport:
             "2024-02-01T10:00:00Z",  # Eval proxy
             "2024-02-03T10:00:00Z",  # Prod proxy
         ]
-        mock_search_litellm.return_value = "2024-01-18T10:00:00Z"
+        # Mock litellm versions - returns list of versions (newest first)
+        mock_find_versions.return_value = ["v1.81.0", "v1.80.0", "v1.79.0"]
+        mock_get_repo.return_value = {
+            "tag_dates": {
+                "v1.81.0": "2024-01-25T10:00:00Z",
+                "v1.80.0": "2024-01-20T10:00:00Z",
+                "v1.79.0": "2024-01-18T10:00:00Z",  # Earliest
+            }
+        }
 
         result = track_llm_support("test-model", "2024-01-15")
 
@@ -349,12 +344,12 @@ class TestTrackLlmSupport:
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
         assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
-    @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
+        self, mock_search_commits, mock_search_index, mock_search_infra, mock_find_versions
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_commits.side_effect = [
@@ -363,7 +358,7 @@ class TestTrackLlmSupport:
         ]
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
-        mock_search_litellm.return_value = None
+        mock_find_versions.return_value = []  # No litellm versions support this model
 
         result = track_llm_support("test-model", "2024-01-15")
 

@@ -287,18 +287,18 @@ def cleanup_litellm_cache():
         _litellm_cache["current_content"] = None
 
 
-def search_litellm_support(model_id: str) -> Optional[str]:
+def find_litellm_versions_supporting_model(model_id: str) -> list[str]:
     """
-    Search for when a model was first supported in a LiteLLM stable release.
+    Find all litellm versions (tags) that support the given model.
 
-    Uses binary search through stable release tags to find the first version
-    that includes the model in model_prices_and_context_window.json.
+    Uses binary search to find the first version, then returns all versions
+    from that point onward (assuming once added, a model stays).
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of the LiteLLM version release date, or None if not found
+        List of version tags that support the model (newest first)
     """
     import subprocess
     
@@ -308,22 +308,19 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         cache = _get_litellm_repo()
         temp_dir = cache["temp_dir"]
         all_tags = cache["tags"]
-        tag_dates = cache["tag_dates"]
         current_content = cache["current_content"]
         
         # Check if model exists in current version
         if not check_model_in_litellm_json(current_content, model_id):
-            return None
+            return []
         
         if not all_tags:
-            return None
+            return []
         
-        current_file = os.path.join(temp_dir, file_path)
-        
-        # Binary search through tags (sorted newest first)
+        # Binary search through tags (sorted newest first by date)
         # Find the oldest tag that has the model
         left, right = 0, len(all_tags) - 1
-        first_tag_with_model = None
+        first_index_with_model = None
         
         while left <= right:
             mid = (left + right) // 2
@@ -339,19 +336,42 @@ def search_litellm_support(model_id: str) -> Optional[str]:
             )
             
             if result.returncode == 0 and check_model_in_litellm_json(result.stdout, model_id):
-                first_tag_with_model = tag
+                first_index_with_model = mid
                 left = mid + 1  # Search for older tags
             else:
                 right = mid - 1  # Search for newer tags
         
-        if not first_tag_with_model:
-            return None
+        if first_index_with_model is None:
+            return []
         
-        return tag_dates.get(first_tag_with_model)
+        # Return all tags from newest (index 0) to the first that has the model
+        return all_tags[:first_index_with_model + 1]
         
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         print(f"Warning: Error searching litellm: {e}", file=sys.stderr)
+        return []
+
+
+def search_litellm_support(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first supported in a LiteLLM stable release.
+
+    Args:
+        model_id: The language model ID to search for
+
+    Returns:
+        ISO timestamp of the earliest LiteLLM version that supports the model
+    """
+    versions = find_litellm_versions_supporting_model(model_id)
+    if not versions:
         return None
+    
+    cache = _get_litellm_repo()
+    tag_dates = cache["tag_dates"]
+    
+    # versions is sorted newest first, so the last one is the earliest
+    earliest_version = versions[-1]
+    return tag_dates.get(earliest_version)
 
 
 def search_index_results_folder(model_id: str) -> Optional[str]:
@@ -409,156 +429,140 @@ def search_index_results_folder(model_id: str) -> Optional[str]:
     return None
 
 
-def get_providers_from_model(model_id: str) -> list[str]:
-    """
-    Determine possible providers from a model ID for wildcard routing lookup.
-    Returns a list of providers to check (in order of preference).
-    """
-    model_lower = model_id.lower()
-    providers = []
-    
-    # Map model prefixes to provider wildcards
-    # These are the wildcards configured in the infra litellm.yaml
-    provider_mappings = {
-        "claude": "anthropic",
-        "gpt": "openai",
-        "gemini": "gemini",
-        "deepseek": "deepseek",
-        "mistral": "mistral",
-        "qwen": "together_ai",  # Qwen models often via together_ai
-        "llama": "together_ai",
-        "kimi": "moonshot",
-    }
-    
-    for prefix, provider in provider_mappings.items():
-        if model_lower.startswith(prefix):
-            providers.append(provider)
-            break
-    
-    # Many models can also be accessed via hosted_vllm or openrouter wildcards
-    # These are fallback options that support a wide range of models
-    providers.extend(["hosted_vllm", "openrouter"])
-    
-    return providers
+# Module-level cache for infra repo
+_infra_cache = {
+    "temp_dir": None,
+    "eval_proxy_history": None,  # List of (date, version) tuples, oldest first
+    "prod_proxy_history": None,
+}
 
 
-def get_provider_from_model(model_id: str) -> Optional[str]:
-    """
-    Determine the primary provider from a model ID for wildcard routing lookup.
-    """
-    providers = get_providers_from_model(model_id)
-    return providers[0] if providers else None
-
-
-def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]:
-    """
-    Check if a provider wildcard exists in the current file and find when it was added.
+def _get_infra_repo():
+    """Get or create the cached infra repo clone."""
+    import subprocess
+    import tempfile
+    import re
     
-    Returns the date of the first commit that added the wildcard pattern.
-    """
-    headers = get_github_headers()
+    if _infra_cache["temp_dir"] is not None:
+        return _infra_cache
     
-    # First check if the wildcard exists in the current file
-    file_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/{path}"
-    try:
-        response = requests.get(file_url, headers=headers, timeout=30)
-        if response.status_code == 200:
-            import base64
-            content = base64.b64decode(response.json().get("content", "")).decode("utf-8")
-            wildcard_pattern = f'{provider}/*'
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/All-Hands-AI/infra.git"
+    else:
+        repo_url = "https://github.com/All-Hands-AI/infra.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="infra_")
+    
+    # Clone the repo
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    _infra_cache["temp_dir"] = temp_dir
+    
+    # Build version history for both proxy types
+    for proxy_type, path in [("eval_proxy", "k8s/evaluation/litellm.yaml"), 
+                              ("prod_proxy", "k8s/production/litellm.yaml")]:
+        history = []
+        
+        # Get all commits that modified this file, with dates
+        result = subprocess.run(
+            ["git", "log", "--format=%H %aI", "--follow", "--", path],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if result.returncode != 0:
+            _infra_cache[f"{proxy_type}_history"] = []
+            continue
+        
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append((parts[0], parts[1]))  # (sha, date)
+        
+        # Process commits oldest to newest
+        for sha, commit_date in reversed(commits):
+            # Get file content at this commit
+            result = subprocess.run(
+                ["git", "show", f"{sha}:{path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             
-            if wildcard_pattern not in content:
-                return None
+            if result.returncode != 0:
+                continue
             
-            # Wildcard exists, find when it was first added
-            # Search commit messages for when this provider was added
-            commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-            params = {"path": path, "per_page": 100}
-            
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-            if response.status_code == 200:
-                commits = response.json()
-                
-                # Look for commits that mention this provider
-                provider_commits = []
-                for commit in commits:
-                    message = commit.get("commit", {}).get("message", "").lower()
-                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                    if commit_date and provider.lower() in message:
-                        provider_commits.append(commit_date)
-                
-                # If found commits mentioning the provider, return the oldest
-                if provider_commits:
-                    return provider_commits[-1]
-                
-                # Otherwise, assume it was in the initial file creation
-                if commits:
-                    return commits[-1].get("commit", {}).get("author", {}).get("date")
-    except requests.RequestException:
-        pass
+            # Extract the litellm image tag
+            tag_match = re.search(r'tag:\s*["\']?(v[\d.]+[^"\'\s]*)', result.stdout)
+            if tag_match:
+                history.append((commit_date, tag_match.group(1)))
+        
+        _infra_cache[f"{proxy_type}_history"] = history
     
-    return None
+    return _infra_cache
 
 
-def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
+def cleanup_infra_cache():
+    """Clean up the infra repo cache."""
+    import shutil
+    if _infra_cache["temp_dir"]:
+        shutil.rmtree(_infra_cache["temp_dir"], ignore_errors=True)
+        _infra_cache["temp_dir"] = None
+        _infra_cache["eval_proxy_history"] = None
+        _infra_cache["prod_proxy_history"] = None
+
+
+def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str] = None) -> Optional[str]:
     """
-    Search for when a model was added to the infra proxy configuration.
+    Search for when a litellm version supporting the model was deployed to infra.
 
-    This searches:
-    1. Commit messages for explicit model name mentions
-    2. Provider wildcard routing (e.g., anthropic/* for claude models)
+    This searches commit history for when any of the valid litellm versions
+    (that support the model) was first deployed to the specified environment.
 
     Args:
         model_id: The language model ID to search for
         proxy_type: Either "eval_proxy" or "prod_proxy"
+        valid_versions: List of litellm version tags that support the model.
+                       If None, returns None.
 
     Returns:
-        ISO timestamp of when the model was added, or None if not found
+        ISO timestamp of when a supporting version was first deployed, or None
     """
-    headers = get_github_headers()
-    repo = REPOS["infra"]
-    path = SEARCH_PATHS[proxy_type][0]
-
-    # Get commits that modified the litellm.yaml file
-    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    params = {"path": path, "per_page": 100}
-
+    if valid_versions is None:
+        return None
+    
     try:
-        response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-        if response.status_code == 200:
-            commits = response.json()
-            
-            # Search through commits for model name (case-insensitive)
-            model_lower = model_id.lower()
-            matching_commits = []
-            
-            for commit in commits:
-                message = commit.get("commit", {}).get("message", "").lower()
-                commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                
-                if not commit_date:
-                    continue
-                    
-                # Check if model name appears in commit message
-                if model_lower in message:
-                    matching_commits.append(commit_date)
-            
-            # If found explicit model mention, return it
-            if matching_commits:
-                return matching_commits[-1]  # Last in list is oldest
-                
-    except requests.RequestException as e:
-        print(f"Warning: Error searching {proxy_type} commits: {e}", file=sys.stderr)
-
-    # If no explicit mention, check for provider wildcard support
-    # Try all possible providers (primary provider first, then fallbacks like hosted_vllm, openrouter)
-    providers = get_providers_from_model(model_id)
-    for provider in providers:
-        wildcard_date = check_wildcard_in_file(repo, path, provider)
-        if wildcard_date:
-            return wildcard_date
-
-    return None
+        cache = _get_infra_repo()
+        history = cache.get(f"{proxy_type}_history", [])
+        
+        if not history:
+            return None
+        
+        # Convert to set for O(1) lookup
+        valid_set = set(valid_versions)
+        
+        # Find the earliest deployment of a valid version
+        for commit_date, deployed_version in history:
+            if deployed_version in valid_set:
+                return commit_date
+        
+        return None
+        
+    except Exception as e:
+        print(f"Warning: Error searching infra proxy: {e}", file=sys.stderr)
+        return None
 
 
 def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:
@@ -646,23 +650,31 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     index_timestamp = search_index_results_folder(model_id)
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
+    # Search for upstream litellm support FIRST
+    # We need to find which versions support the model before searching proxy
+    print(f"Searching for {model_id} in BerriAI/litellm...")
+    valid_versions = find_litellm_versions_supporting_model(model_id)
+    
+    if valid_versions:
+        cache = _get_litellm_repo()
+        tag_dates = cache["tag_dates"]
+        earliest_version = valid_versions[-1]  # Last is earliest (sorted newest first)
+        litellm_timestamp = tag_dates.get(earliest_version)
+    else:
+        litellm_timestamp = None
+    
+    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
+
     # Search for eval proxy support
+    # Find when a litellm version that supports the model was first deployed
     print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
-    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
     result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
 
     # Search for prod proxy support
     print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
-    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
     result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
-
-    # Search for upstream litellm support
-    # Note: This tracks when BerriAI/litellm added explicit support for the model.
-    # The proxy may work with models before they're explicitly added to litellm
-    # (e.g., via provider wildcards or custom configurations).
-    print(f"Searching for {model_id} in BerriAI/litellm...")
-    litellm_timestamp = search_litellm_support(model_id)
-    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
 
     return result
 
