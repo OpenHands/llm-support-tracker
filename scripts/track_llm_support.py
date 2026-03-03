@@ -501,6 +501,76 @@ def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> 
         return timestamp
 
 
+def search_model_in_file_history(
+    repo: str, file_path: str, model_id: str
+) -> Optional[str]:
+    """
+    Search for when a model first appeared in a file by checking commit history.
+
+    Goes through the commit history of the file from oldest to newest and finds
+    the first commit where the model ID appears in the file content.
+
+    Args:
+        repo: Repository in format "owner/repo"
+        file_path: Path to the file to check
+        model_id: The language model ID to search for
+
+    Returns:
+        ISO timestamp of the first commit where model appears, or None if not found
+    """
+    headers = get_github_headers()
+    search_terms = get_model_search_terms(model_id)
+
+    # Get commit history for the file
+    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
+    all_commits = []
+    page = 1
+    max_pages = 10
+
+    while page <= max_pages:
+        params = {"path": file_path, "per_page": 100, "page": page}
+        try:
+            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            if response.status_code != 200:
+                break
+            commits = response.json()
+            if not commits:
+                break
+            all_commits.extend(commits)
+            if len(commits) < 100:
+                break
+            page += 1
+        except requests.RequestException:
+            break
+
+    if not all_commits:
+        return None
+
+    # Go through commits from oldest to newest to find first appearance
+    for commit in reversed(all_commits):
+        commit_sha = commit.get("sha")
+        commit_date = commit.get("commit", {}).get("author", {}).get("date")
+
+        if not commit_sha or not commit_date:
+            continue
+
+        # Fetch file content at this commit
+        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
+        try:
+            file_response = requests.get(file_url, headers=headers, timeout=30)
+            if file_response.status_code == 200:
+                content = file_response.text.lower()
+
+                # Check if any search term appears in the file
+                for term in search_terms:
+                    if term.lower() in content:
+                        return commit_date
+        except requests.RequestException:
+            continue
+
+    return None
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -530,10 +600,10 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     )
     result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
 
-    # Search for frontend support
+    # Search for frontend support by checking file history
     print(f"Searching for {model_id} in OpenHands frontend...")
-    frontend_timestamp = search_commits_for_model(
-        REPOS["frontend"], model_id, SEARCH_PATHS["frontend"]
+    frontend_timestamp = search_model_in_file_history(
+        REPOS["frontend"], SEARCH_PATHS["frontend"][0], model_id
     )
     result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
 
