@@ -191,12 +191,98 @@ def check_model_in_litellm_json(content: str, model_id: str) -> bool:
     return False
 
 
+# Module-level cache for litellm repo
+_litellm_cache = {
+    "temp_dir": None,
+    "tags": None,
+    "current_content": None,
+}
+
+
+def _get_litellm_repo():
+    """Get or create the cached litellm repo clone."""
+    import subprocess
+    import tempfile
+    import re
+    
+    if _litellm_cache["temp_dir"] is not None:
+        return _litellm_cache
+    
+    repo_url = "https://github.com/BerriAI/litellm.git"
+    file_path = "model_prices_and_context_window.json"
+    
+    temp_dir = tempfile.mkdtemp(prefix="litellm_")
+    
+    # Shallow clone with all tags
+    subprocess.run(
+        ["git", "clone", "--depth=1", "--no-single-branch", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    # Fetch all tags
+    subprocess.run(
+        ["git", "fetch", "--tags", "--depth=1"],
+        cwd=temp_dir,
+        capture_output=True,
+        check=True,
+        timeout=60,
+    )
+    
+    # Read current content
+    current_file = os.path.join(temp_dir, file_path)
+    with open(current_file) as f:
+        current_content = f.read()
+    
+    # Get all stable version tags
+    result = subprocess.run(
+        ["git", "tag", "-l", "v*"],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    
+    all_tags = []
+    for tag in result.stdout.strip().split("\n"):
+        # Only match stable version tags like v1.2.3 or v1.2.3.4
+        if tag and re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', tag):
+            all_tags.append(tag)
+    
+    # Sort tags by version number (newest first)
+    def version_key(tag):
+        try:
+            parts = tag[1:].split(".")
+            return tuple(int(p) for p in parts)
+        except ValueError:
+            return (0,)
+    
+    all_tags.sort(key=version_key, reverse=True)
+    
+    _litellm_cache["temp_dir"] = temp_dir
+    _litellm_cache["tags"] = all_tags
+    _litellm_cache["current_content"] = current_content
+    
+    return _litellm_cache
+
+
+def cleanup_litellm_cache():
+    """Clean up the litellm repo cache."""
+    import shutil
+    if _litellm_cache["temp_dir"]:
+        shutil.rmtree(_litellm_cache["temp_dir"], ignore_errors=True)
+        _litellm_cache["temp_dir"] = None
+        _litellm_cache["tags"] = None
+        _litellm_cache["current_content"] = None
+
+
 def search_litellm_support(model_id: str) -> Optional[str]:
     """
-    Search for when a model was first supported in a LiteLLM release version.
+    Search for when a model was first supported in a LiteLLM stable release.
 
-    This clones the litellm repo locally and finds the first release version (tag)
-    where the model appears in model_prices_and_context_window.json.
+    This uses a cached clone of the litellm repo and finds the first stable
+    release version (tag) where the model appears in model_prices_and_context_window.json.
 
     Args:
         model_id: The language model ID to search for
@@ -205,71 +291,23 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         ISO timestamp of the LiteLLM version release date, or None if not found
     """
     import subprocess
-    import tempfile
-    import shutil
     
-    repo_url = "https://github.com/BerriAI/litellm.git"
     file_path = "model_prices_and_context_window.json"
-    search_terms = get_litellm_model_search_terms(model_id)
-    
-    # Create temp directory for clone
-    temp_dir = tempfile.mkdtemp(prefix="litellm_")
     
     try:
-        # Shallow clone with all tags
-        subprocess.run(
-            ["git", "clone", "--depth=1", "--no-single-branch", repo_url, temp_dir],
-            capture_output=True,
-            check=True,
-            timeout=120,
-        )
-        
-        # Fetch all tags
-        subprocess.run(
-            ["git", "fetch", "--tags", "--depth=1"],
-            cwd=temp_dir,
-            capture_output=True,
-            check=True,
-            timeout=60,
-        )
+        cache = _get_litellm_repo()
+        temp_dir = cache["temp_dir"]
+        all_tags = cache["tags"]
+        current_content = cache["current_content"]
         
         # Check if model exists in current version
-        current_file = os.path.join(temp_dir, file_path)
-        if not os.path.exists(current_file):
+        if not check_model_in_litellm_json(current_content, model_id):
             return None
-        
-        with open(current_file) as f:
-            if not check_model_in_litellm_json(f.read(), model_id):
-                return None
-        
-        # Get all stable version tags sorted by version number (descending)
-        import re
-        result = subprocess.run(
-            ["git", "tag", "-l", "v*"],
-            cwd=temp_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        
-        all_tags = []
-        for tag in result.stdout.strip().split("\n"):
-            # Only match stable version tags like v1.2.3 or v1.2.3.4
-            if tag and re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', tag):
-                all_tags.append(tag)
         
         if not all_tags:
             return None
         
-        # Sort tags by version number (newest first)
-        def version_key(tag):
-            try:
-                parts = tag[1:].split(".")
-                return tuple(int(p) for p in parts)
-            except ValueError:
-                return (0,)
-        
-        all_tags.sort(key=version_key, reverse=True)
+        current_file = os.path.join(temp_dir, file_path)
         
         # Binary search to find first tag with the model
         left, right = 0, len(all_tags) - 1
@@ -316,9 +354,6 @@ def search_litellm_support(model_id: str) -> Optional[str]:
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         print(f"Warning: Error searching litellm: {e}", file=sys.stderr)
         return None
-    finally:
-        # Clean up temp directory
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def search_index_results_folder(model_id: str) -> Optional[str]:

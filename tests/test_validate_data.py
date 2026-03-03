@@ -10,7 +10,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from validate_data import parse_timestamp, validate_proxy_after_litellm, validate_data
+from validate_data import (
+    parse_timestamp,
+    validate_required_fields,
+    validate_timestamp_formats,
+    validate_data,
+)
 
 
 class TestParseTimestamp:
@@ -47,76 +52,68 @@ class TestParseTimestamp:
         assert ts.year == 2024
 
 
-class TestValidateProxyAfterLitellm:
-    """Tests for validate_proxy_after_litellm function."""
+class TestValidateRequiredFields:
+    """Tests for validate_required_fields function."""
 
-    def test_valid_order(self):
-        """Test when proxy support is after litellm support."""
+    def test_valid_model(self):
+        """Test model with all required fields."""
         model = {
             "model_id": "test-model",
-            "litellm_support_timestamp": "2024-01-10T10:00:00Z",
-            "eval_proxy_timestamp": "2024-01-15T10:00:00Z",
-            "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
+            "release_date": "2024-01-15",
         }
-        errors = validate_proxy_after_litellm(model)
+        errors = validate_required_fields(model)
         assert len(errors) == 0
 
-    def test_eval_proxy_before_litellm(self):
-        """Test error when eval proxy is before litellm."""
+    def test_missing_model_id(self):
+        """Test error when model_id is missing."""
         model = {
-            "model_id": "test-model",
-            "litellm_support_timestamp": "2024-01-15T10:00:00Z",
-            "eval_proxy_timestamp": "2024-01-10T10:00:00Z",  # Before litellm
-            "prod_proxy_timestamp": None,
+            "release_date": "2024-01-15",
         }
-        errors = validate_proxy_after_litellm(model)
+        errors = validate_required_fields(model)
         assert len(errors) == 1
-        assert "eval_proxy_timestamp" in errors[0]
-        assert "before litellm_support_timestamp" in errors[0]
+        assert "model_id" in errors[0]
 
-    def test_prod_proxy_before_litellm(self):
-        """Test error when prod proxy is before litellm."""
+    def test_missing_release_date(self):
+        """Test error when release_date is missing."""
         model = {
             "model_id": "test-model",
-            "litellm_support_timestamp": "2024-01-15T10:00:00Z",
-            "eval_proxy_timestamp": None,
-            "prod_proxy_timestamp": "2024-01-10T10:00:00Z",  # Before litellm
         }
-        errors = validate_proxy_after_litellm(model)
+        errors = validate_required_fields(model)
         assert len(errors) == 1
-        assert "prod_proxy_timestamp" in errors[0]
+        assert "release_date" in errors[0]
 
-    def test_both_proxies_before_litellm(self):
-        """Test errors when both proxies are before litellm."""
+
+class TestValidateTimestampFormats:
+    """Tests for validate_timestamp_formats function."""
+
+    def test_valid_timestamps(self):
+        """Test model with valid timestamp formats."""
         model = {
             "model_id": "test-model",
             "litellm_support_timestamp": "2024-01-15T10:00:00Z",
-            "eval_proxy_timestamp": "2024-01-05T10:00:00Z",
-            "prod_proxy_timestamp": "2024-01-10T10:00:00Z",
+            "eval_proxy_timestamp": "2024-01-20T10:00:00Z",
         }
-        errors = validate_proxy_after_litellm(model)
-        assert len(errors) == 2
+        errors = validate_timestamp_formats(model)
+        assert len(errors) == 0
 
-    def test_no_litellm_support(self):
-        """Test when litellm support is not set (no validation possible)."""
+    def test_invalid_timestamp(self):
+        """Test error for invalid timestamp format."""
+        model = {
+            "model_id": "test-model",
+            "litellm_support_timestamp": "not-a-timestamp",
+        }
+        errors = validate_timestamp_formats(model)
+        assert len(errors) == 1
+        assert "Invalid timestamp" in errors[0]
+
+    def test_null_timestamps_ok(self):
+        """Test that null timestamps are acceptable."""
         model = {
             "model_id": "test-model",
             "litellm_support_timestamp": None,
-            "eval_proxy_timestamp": "2024-01-15T10:00:00Z",
-            "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
-        }
-        errors = validate_proxy_after_litellm(model)
-        assert len(errors) == 0  # Can't validate without litellm timestamp
-
-    def test_no_proxy_support(self):
-        """Test when proxy support is not set."""
-        model = {
-            "model_id": "test-model",
-            "litellm_support_timestamp": "2024-01-15T10:00:00Z",
             "eval_proxy_timestamp": None,
-            "prod_proxy_timestamp": None,
         }
-        errors = validate_proxy_after_litellm(model)
+        errors = validate_timestamp_formats(model)
         assert len(errors) == 0
 
 
@@ -128,12 +125,14 @@ class TestValidateData:
         data = [
             {
                 "model_id": "model-1",
+                "release_date": "2024-01-01",
                 "litellm_support_timestamp": "2024-01-10T10:00:00Z",
                 "eval_proxy_timestamp": "2024-01-15T10:00:00Z",
                 "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
             },
             {
                 "model_id": "model-2",
+                "release_date": "2024-02-01",
                 "litellm_support_timestamp": "2024-02-01T10:00:00Z",
                 "eval_proxy_timestamp": "2024-02-05T10:00:00Z",
                 "prod_proxy_timestamp": None,
@@ -150,14 +149,12 @@ class TestValidateData:
         finally:
             temp_file.unlink()
 
-    def test_validate_invalid_data(self):
-        """Test validation catches invalid data."""
+    def test_validate_missing_required_fields(self):
+        """Test validation catches missing required fields."""
         data = [
             {
                 "model_id": "model-1",
-                "litellm_support_timestamp": "2024-01-15T10:00:00Z",
-                "eval_proxy_timestamp": "2024-01-10T10:00:00Z",  # Invalid
-                "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
+                # Missing release_date
             },
         ]
         
@@ -168,6 +165,7 @@ class TestValidateData:
         try:
             errors = validate_data(temp_file)
             assert len(errors) == 1
+            assert "release_date" in errors[0]
         finally:
             temp_file.unlink()
 

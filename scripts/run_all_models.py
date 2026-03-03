@@ -12,7 +12,7 @@ import sys
 # Add parent directory to path so we can import track_llm_support
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from track_llm_support import track_llm_support
+from track_llm_support import track_llm_support, cleanup_litellm_cache
 
 import requests
 
@@ -112,6 +112,9 @@ def main():
             print(f"\nResult: {json.dumps(result, indent=2)}")
         except Exception as e:
             print(f"Error processing {model}: {e}")
+
+    # Clean up litellm cache
+    cleanup_litellm_cache()
 
     # Write single source of truth
     output_file = os.path.join(data_dir, "all_models.json")

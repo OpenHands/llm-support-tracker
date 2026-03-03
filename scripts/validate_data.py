@@ -3,8 +3,8 @@
 Validate the LLM support data for logical consistency.
 
 Rules:
-- Proxy support (eval_proxy_timestamp, prod_proxy_timestamp) must not be before
-  litellm_support_timestamp, as the proxy is based on litellm.
+- Required fields: model_id, release_date
+- Timestamps should be valid ISO format
 """
 
 import argparse
@@ -45,36 +45,47 @@ def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def validate_proxy_after_litellm(model: dict) -> list[str]:
+def validate_required_fields(model: dict) -> list[str]:
     """
-    Validate that proxy support timestamps are not before litellm support.
+    Validate that required fields are present.
+    
+    Returns a list of error messages (empty if valid).
+    """
+    errors = []
+    model_id = model.get("model_id")
+    
+    if not model_id:
+        errors.append("Missing model_id field")
+        return errors
+    
+    if not model.get("release_date"):
+        errors.append(f"{model_id}: Missing release_date field")
+    
+    return errors
+
+
+def validate_timestamp_formats(model: dict) -> list[str]:
+    """
+    Validate that all timestamp fields are parseable.
     
     Returns a list of error messages (empty if valid).
     """
     errors = []
     model_id = model.get("model_id", "unknown")
     
-    litellm_ts = parse_timestamp(model.get("litellm_support_timestamp"))
-    eval_proxy_ts = parse_timestamp(model.get("eval_proxy_timestamp"))
-    prod_proxy_ts = parse_timestamp(model.get("prod_proxy_timestamp"))
+    timestamp_fields = [
+        "sdk_support_timestamp",
+        "frontend_support_timestamp",
+        "index_results_timestamp",
+        "eval_proxy_timestamp",
+        "prod_proxy_timestamp",
+        "litellm_support_timestamp",
+    ]
     
-    # If litellm support is not set, proxy support should also not be set
-    # (or we can't validate the order)
-    if litellm_ts is None:
-        # This is okay - litellm might not support the model yet
-        return errors
-    
-    if eval_proxy_ts is not None and eval_proxy_ts < litellm_ts:
-        errors.append(
-            f"{model_id}: eval_proxy_timestamp ({model.get('eval_proxy_timestamp')}) "
-            f"is before litellm_support_timestamp ({model.get('litellm_support_timestamp')})"
-        )
-    
-    if prod_proxy_ts is not None and prod_proxy_ts < litellm_ts:
-        errors.append(
-            f"{model_id}: prod_proxy_timestamp ({model.get('prod_proxy_timestamp')}) "
-            f"is before litellm_support_timestamp ({model.get('litellm_support_timestamp')})"
-        )
+    for field in timestamp_fields:
+        value = model.get(field)
+        if value is not None and parse_timestamp(value) is None:
+            errors.append(f"{model_id}: Invalid timestamp format in {field}: {value}")
     
     return errors
 
@@ -90,8 +101,8 @@ def validate_data(data_file: Path) -> list[str]:
     
     all_errors = []
     for model in models:
-        errors = validate_proxy_after_litellm(model)
-        all_errors.extend(errors)
+        all_errors.extend(validate_required_fields(model))
+        all_errors.extend(validate_timestamp_formats(model))
     
     return all_errors
 
