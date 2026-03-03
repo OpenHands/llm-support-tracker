@@ -643,7 +643,9 @@ def search_model_in_file_history(
         ISO timestamp of the first commit where model appears, or None if not found
     """
     headers = get_github_headers()
-    search_terms = get_model_search_terms(model_id)
+    
+    # Search for the exact model name (lowercase since we lowercase file content)
+    search_term = model_id.lower()
 
     # Get commit history for the file
     commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
@@ -685,10 +687,9 @@ def search_model_in_file_history(
             if file_response.status_code == 200:
                 content = file_response.text.lower()
 
-                # Check if any search term appears in the file
-                for term in search_terms:
-                    if term.lower() in content:
-                        return commit_date
+                # Check if the exact model name appears in the file
+                if search_term in content:
+                    return commit_date
         except requests.RequestException:
             continue
 
