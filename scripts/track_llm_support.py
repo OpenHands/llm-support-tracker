@@ -224,16 +224,20 @@ def search_litellm_support(model_id: str) -> Optional[str]:
 
 def search_index_results_folder(model_id: str) -> Optional[str]:
     """
-    Search for when a model folder was added to openhands-index-results.
+    Search for when a model first had complete benchmark results in openhands-index-results.
+
+    A model is considered "complete" when it has results for all 5 required benchmarks:
+    swe-bench, commit0, gaia, swt-bench, and swe-bench-multimodal.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of when the folder was created, or None if not found
+        ISO timestamp of the first commit with complete results, or None if not found/incomplete
     """
     headers = get_github_headers()
     repo = REPOS["index_results"]
+    required_benchmarks = {"swe-bench", "commit0", "gaia", "swt-bench", "swe-bench-multimodal"}
 
     # First, check if the folder exists
     contents_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/results"
@@ -257,19 +261,43 @@ def search_index_results_folder(model_id: str) -> Optional[str]:
         if not folder_name:
             return None
 
-        # Get the first commit that added this folder
+        # Get the commit history for scores.json
         commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-        params = {"path": f"results/{folder_name}", "per_page": 100}
+        params = {"path": f"results/{folder_name}/scores.json", "per_page": 100}
 
         response = requests.get(commits_url, headers=headers, params=params, timeout=30)
         if response.status_code != 200:
             return None
 
         commits = response.json()
-        if commits:
-            # Get the oldest commit (last in the list)
-            oldest_commit = commits[-1]
-            return oldest_commit.get("commit", {}).get("author", {}).get("date")
+        if not commits:
+            return None
+
+        # Go through commits from oldest to newest to find first complete scores.json
+        # Commits are returned newest-first, so reverse the list
+        for commit in reversed(commits):
+            commit_sha = commit.get("sha")
+            commit_date = commit.get("commit", {}).get("author", {}).get("date")
+
+            if not commit_sha or not commit_date:
+                continue
+
+            # Fetch scores.json at this commit
+            scores_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/results/{folder_name}/scores.json"
+            try:
+                scores_response = requests.get(scores_url, headers=headers, timeout=30)
+                if scores_response.status_code == 200:
+                    scores = scores_response.json()
+                    present_benchmarks = {entry.get("benchmark") for entry in scores if entry.get("benchmark")}
+
+                    # Check if all required benchmarks are present
+                    if required_benchmarks.issubset(present_benchmarks):
+                        return commit_date
+            except (requests.RequestException, json.JSONDecodeError):
+                continue
+
+        # No commit found with complete benchmarks
+        return None
 
     except requests.RequestException as e:
         print(f"Warning: Error searching index results: {e}", file=sys.stderr)
