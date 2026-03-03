@@ -571,6 +571,31 @@ def search_model_in_file_history(
     return None
 
 
+def get_later_timestamp(timestamp1: Optional[str], timestamp2: Optional[str]) -> Optional[str]:
+    """
+    Return the later of two timestamps, or whichever is not None.
+
+    Args:
+        timestamp1: First ISO timestamp (or None)
+        timestamp2: Second ISO timestamp (or None)
+
+    Returns:
+        The later timestamp, or None if both are None
+    """
+    if timestamp1 is None:
+        return timestamp2
+    if timestamp2 is None:
+        return timestamp1
+
+    # Compare timestamps (ISO format strings are lexicographically comparable)
+    # Normalize to comparable format
+    def normalize(ts: str) -> str:
+        # Extract just the date and time parts for comparison
+        return ts.replace("+00:00", "Z").split(".")[0]
+
+    return timestamp1 if normalize(timestamp1) > normalize(timestamp2) else timestamp2
+
+
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -593,12 +618,29 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "litellm_support_timestamp": None,
     }
 
-    # Search for SDK support
+    # Search for upstream litellm support FIRST
+    # SDK support cannot be earlier than litellm support
+    print(f"Searching for {model_id} in BerriAI/litellm...")
+    litellm_timestamp = search_litellm_support(model_id)
+    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
+
+    # Search for SDK-specific support (special handling added for this model)
+    # SDK support defaults to litellm support, but if there's SDK-specific work
+    # that happened later, use that later date
     print(f"Searching for {model_id} in software-agent-sdk...")
-    sdk_timestamp = search_commits_for_model(
+    sdk_specific_timestamp = search_commits_for_model(
         REPOS["sdk"], model_id, SEARCH_PATHS["sdk"]
     )
-    result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
+    sdk_specific_timestamp = adjust_timestamp_to_release(sdk_specific_timestamp, release_date)
+
+    # SDK support is the later of: litellm support or SDK-specific work
+    # If no SDK-specific work found, default to litellm support
+    if sdk_specific_timestamp is not None:
+        result["sdk_support_timestamp"] = get_later_timestamp(
+            result["litellm_support_timestamp"], sdk_specific_timestamp
+        )
+    else:
+        result["sdk_support_timestamp"] = result["litellm_support_timestamp"]
 
     # Search for frontend support by checking file history
     print(f"Searching for {model_id} in OpenHands frontend...")
@@ -621,14 +663,6 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
     prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
     result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
-
-    # Search for upstream litellm support
-    # Note: This tracks when BerriAI/litellm added explicit support for the model.
-    # The proxy may work with models before they're explicitly added to litellm
-    # (e.g., via provider wildcards or custom configurations).
-    print(f"Searching for {model_id} in BerriAI/litellm...")
-    litellm_timestamp = search_litellm_support(model_id)
-    result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
 
     return result
 
