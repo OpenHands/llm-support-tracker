@@ -148,7 +148,8 @@ class TestGetLitellmModelSearchTerms:
     def test_model_with_alias(self):
         """Test model with defined alias returns alias."""
         terms = get_litellm_model_search_terms("DeepSeek-V3.2-Reasoner")
-        assert terms == ["deepseek-reasoner"]
+        # Uses versioned name to avoid matching older unversioned deepseek-reasoner
+        assert terms == ["deepseek/deepseek-v3.2"]
 
     def test_glm5_alias(self):
         """Test GLM-5 returns correct litellm name."""

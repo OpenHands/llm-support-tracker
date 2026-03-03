@@ -148,11 +148,17 @@ def get_litellm_model_search_terms(model_id: str) -> list[str]:
     """
     # Model-specific aliases only when litellm uses a different name
     MODEL_ALIASES = {
-        "deepseek-v3.2-reasoner": ["deepseek-reasoner"],
-        "glm-5": ["zai/glm-5"],
+        # DeepSeek V3.2 Reasoner - use versioned name only
+        # Note: "deepseek-reasoner" is a separate unversioned model that predates V3.2
+        "deepseek-v3.2-reasoner": ["deepseek/deepseek-v3.2"],
+        # Gemini 3 Flash - litellm uses "preview" suffix
         "gemini-3-flash": ["gemini-3-flash-preview"],
-        "nemotron-3-nano": ["nvidia.nemotron-nano-3-30b"],
-        "qwen3-coder-480b": ["qwen3-coder-480b-a35b"],
+        # GLM-5 - litellm uses zai/ prefix
+        "glm-5": ["zai/glm-5"],
+        # Nemotron 3 Nano - check for nvidia nemotron nano variants
+        "nemotron-3-nano": ["nvidia-nemotron-nano"],
+        # Qwen3 Coder models - litellm uses qwen. prefix on bedrock
+        "qwen3-coder-480b": ["qwen3-coder-480b"],
         "qwen3-coder-next": ["qwen.qwen3-coder-next"],
     }
     
