@@ -254,20 +254,19 @@ def _get_litellm_repo():
         if len(parts) != 2:
             continue
         tag, date = parts
-        # Only match stable version tags like v1.2.3 or v1.2.3.4
-        if re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', tag):
-            all_tags.append(tag)
-            tag_dates[tag] = date
+        # Match stable version tags:
+        # - Pure versions: v1.2.3, v1.2.3.4
+        # - Stable releases: v1.2.3-stable, v1.2.3-stable.model-name, etc.
+        # Exclude: -nightly, .rc, .dev variants
+        if re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?(-stable.*)?$', tag):
+            if '-nightly' not in tag and '.rc' not in tag and '.dev' not in tag:
+                all_tags.append(tag)
+                tag_dates[tag] = date
     
-    # Sort tags by version number (newest first for binary search)
-    def version_key(tag):
-        try:
-            parts = tag[1:].split(".")
-            return tuple(int(p) for p in parts)
-        except ValueError:
-            return (0,)
-    
-    all_tags.sort(key=version_key, reverse=True)
+    # Sort tags by date (newest first for binary search)
+    # Using date is more accurate than version number because -stable.xxx patches
+    # may be released after newer base versions
+    all_tags.sort(key=lambda t: tag_dates.get(t, ""), reverse=True)
     
     _litellm_cache["temp_dir"] = temp_dir
     _litellm_cache["tags"] = all_tags

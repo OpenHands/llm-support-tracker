@@ -198,23 +198,34 @@ class TestSearchLitellmSupport:
         import re
         
         tags = [
-            "v1.81.13",        # Stable - should match
-            "v1.80.0",         # Stable - should match
-            "v1.79.0",         # Stable - should match
-            "v1.0.0",          # Stable - should match
-            "v1.80.1-nightly", # Non-stable - should NOT match
-            "v1.79.0-rc.1",    # Non-stable - should NOT match
-            "v1.78.0.dev1",    # Non-stable - should NOT match
-            "v1.81.9.rc.1",    # Non-stable - should NOT match
-            "v1.81.7.dev1",    # Non-stable - should NOT match
+            "v1.81.13",                              # Stable - should match
+            "v1.80.0",                               # Stable - should match
+            "v1.79.0",                               # Stable - should match
+            "v1.0.0",                                # Stable - should match
+            "v1.81.9-stable",                        # Stable release - should match
+            "v1.81.9-stable.gemini.3.1-pro",         # Stable release - should match
+            "v1.81.3-stable.sonnet-4-6",             # Stable release - should match
+            "v1.80.1-nightly",                       # Non-stable - should NOT match
+            "v1.79.0-rc.1",                          # Non-stable - should NOT match
+            "v1.78.0.dev1",                          # Non-stable - should NOT match
+            "v1.81.9.rc.1",                          # Non-stable - should NOT match
+            "v1.81.7.dev1",                          # Non-stable - should NOT match
         ]
         
-        stable_tags = [t for t in tags if re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', t)]
+        def is_stable(tag):
+            if not re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?(-stable.*)?$', tag):
+                return False
+            return '-nightly' not in tag and '.rc' not in tag and '.dev' not in tag
+        
+        stable_tags = [t for t in tags if is_stable(t)]
         
         assert "v1.81.13" in stable_tags
         assert "v1.80.0" in stable_tags
         assert "v1.79.0" in stable_tags
         assert "v1.0.0" in stable_tags
+        assert "v1.81.9-stable" in stable_tags
+        assert "v1.81.9-stable.gemini.3.1-pro" in stable_tags
+        assert "v1.81.3-stable.sonnet-4-6" in stable_tags
         assert "v1.80.1-nightly" not in stable_tags
         assert "v1.79.0-rc.1" not in stable_tags
         assert "v1.78.0.dev1" not in stable_tags
