@@ -1,0 +1,39 @@
+name: Validate Data
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'data/**'
+      - 'scripts/**'
+      - 'tests/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'data/**'
+      - 'scripts/**'
+      - 'tests/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+      - name: Validate data consistency
+        run: python scripts/validate_data.py
+        # Validates that proxy support timestamps are not before litellm support
+        # timestamps, since the proxy is based on litellm and models must be in
+        # model_prices_and_context_window.json before proxy can support them.
