@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from track_llm_support import (
     get_github_headers,
+    get_litellm_model_search_terms,
+    check_model_in_litellm_json,
     search_commits_for_model,
     search_index_results_folder,
     search_infra_proxy,
@@ -134,32 +136,102 @@ class TestSearchIndexResultsFolder:
         assert result is None
 
 
+class TestGetLitellmModelSearchTerms:
+    """Tests for get_litellm_model_search_terms function."""
+
+    def test_basic_model_id(self):
+        """Test basic model ID generates correct search terms."""
+        terms = get_litellm_model_search_terms("test-model")
+        assert "test-model" in terms
+        assert "test_model" in terms
+
+    def test_versioned_model_id(self):
+        """Test versioned model ID like claude-sonnet-4-5."""
+        terms = get_litellm_model_search_terms("claude-sonnet-4-5")
+        assert "claude-sonnet-4-5" in terms
+        assert "claude-sonnet-4.5" in terms
+
+    def test_decimal_version_model(self):
+        """Test model with decimal version like GPT-5.2."""
+        terms = get_litellm_model_search_terms("GPT-5.2")
+        assert "gpt-5.2" in terms
+        # Should include variations
+        assert any("5.2" in t for t in terms)
+
+    def test_no_duplicates(self):
+        """Test that search terms have no duplicates."""
+        terms = get_litellm_model_search_terms("test-model")
+        assert len(terms) == len(set(terms))
+
+
+class TestCheckModelInLitellmJson:
+    """Tests for check_model_in_litellm_json function."""
+
+    def test_model_as_json_key(self):
+        """Test finding model as a JSON key."""
+        content = '{"test-model": {"price": 0.01}, "other": {}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
+
+    def test_model_with_provider_prefix(self):
+        """Test finding model with provider prefix like openai/gpt-4."""
+        content = '{"openai/test-model": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
+
+    def test_model_not_found(self):
+        """Test when model is not in the JSON."""
+        content = '{"other-model": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is False
+
+    def test_partial_match_rejected(self):
+        """Test that partial matches in values are rejected."""
+        # Model appears in a value, not as a key
+        content = '{"model": {"name": "test-model-v2"}}'
+        assert check_model_in_litellm_json(content, "test-model") is False
+
+    def test_case_insensitive(self):
+        """Test case-insensitive matching."""
+        content = '{"TEST-MODEL": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
+
+
 class TestSearchLitellmSupport:
     """Tests for search_litellm_support function."""
 
     @patch("track_llm_support.requests.get")
     def test_search_litellm_success(self, mock_get):
-        """Test successful litellm search using binary search through commits."""
+        """Test successful litellm search using binary search through tags."""
         def mock_response_factory(*args, **kwargs):
             url = args[0] if args else kwargs.get('url', '')
             mock_response = MagicMock()
             mock_response.status_code = 200
             
             if 'raw.githubusercontent.com' in url:
-                # Return file content with the model
+                # Return file content with the model as a JSON key
                 mock_response.text = '{"test-model": {"price": 0.01}}'
-            elif '/commits' in url:
-                # Return list of commits
+                mock_response.json.return_value = {"test-model": {"price": 0.01}}
+            elif '/releases/tags/' in url:
+                # Return release info as a dict (check before /tags)
+                mock_response.json.return_value = {
+                    "published_at": "2024-01-15T10:00:00Z"
+                }
+            elif '/repos/' in url and '/tags' in url:
+                # Return list of tags (newest first)
                 mock_response.json.return_value = [
-                    {"sha": "abc123", "commit": {"author": {"date": "2024-01-15T10:00:00Z"}}},
-                    {"sha": "def456", "commit": {"author": {"date": "2024-01-10T10:00:00Z"}}},
+                    {"name": "v1.80.0", "commit": {"sha": "abc123"}},
+                    {"name": "v1.79.0", "commit": {"sha": "def456"}},
+                    {"name": "v1.78.0", "commit": {"sha": "ghi789"}},
                 ]
+            elif '/commits/' in url:
+                # Fallback commit info
+                mock_response.json.return_value = {
+                    "commit": {"author": {"date": "2024-01-15T10:00:00Z"}}
+                }
             return mock_response
         
         mock_get.side_effect = mock_response_factory
 
         result = search_litellm_support("test-model")
-        # Should find the model in the oldest commit checked
+        # Should find the model and return the release date
         assert result is not None
 
     @patch("track_llm_support.requests.get")
@@ -172,6 +244,45 @@ class TestSearchLitellmSupport:
 
         result = search_litellm_support("nonexistent-model")
         assert result is None
+
+    @patch("track_llm_support.requests.get")
+    def test_search_litellm_filters_nightly_tags(self, mock_get):
+        """Test that nightly/rc/dev tags are filtered out."""
+        def mock_response_factory(*args, **kwargs):
+            url = args[0] if args else kwargs.get('url', '')
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            
+            if 'raw.githubusercontent.com' in url:
+                # Return file content - model exists in v1.80.0
+                if 'abc123' in url or '/main/' in url:  # v1.80.0 (stable) or main
+                    mock_response.text = '{"test-model": {"price": 0.01}}'
+                else:
+                    mock_response.text = '{"other-model": {"price": 0.01}}'
+            elif '/releases/tags/' in url:
+                # Return release info as a dict (check before /tags)
+                mock_response.json.return_value = {
+                    "published_at": "2024-01-15T10:00:00Z"
+                }
+            elif '/repos/' in url and '/tags' in url:
+                # Return mix of stable and non-stable tags
+                mock_response.json.return_value = [
+                    {"name": "v1.80.0-nightly", "commit": {"sha": "nightly1"}},  # Should be filtered
+                    {"name": "v1.80.0", "commit": {"sha": "abc123"}},  # Stable
+                    {"name": "v1.79.0-rc.1", "commit": {"sha": "rc1"}},  # Should be filtered
+                    {"name": "v1.79.0", "commit": {"sha": "def456"}},  # Stable
+                ]
+            elif '/commits/' in url:
+                # Fallback commit info
+                mock_response.json.return_value = {
+                    "commit": {"author": {"date": "2024-01-15T10:00:00Z"}}
+                }
+            return mock_response
+        
+        mock_get.side_effect = mock_response_factory
+
+        result = search_litellm_support("test-model")
+        assert result is not None
 
 
 class TestSearchInfraProxy:

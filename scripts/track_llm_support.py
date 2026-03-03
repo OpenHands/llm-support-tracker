@@ -140,23 +140,100 @@ def search_commits_for_model(
     return earliest_date
 
 
+def get_litellm_model_search_terms(model_id: str) -> list[str]:
+    """
+    Get search terms for finding a model in litellm's model_prices_and_context_window.json.
+    
+    Returns terms that should match as JSON keys in the model prices file.
+    """
+    import re
+    
+    terms = []
+    model_lower = model_id.lower()
+    
+    # Add the model ID as-is (lowercase)
+    terms.append(model_lower)
+    
+    # Replace hyphens with underscores and vice versa
+    terms.append(model_lower.replace("-", "_"))
+    terms.append(model_lower.replace("_", "-"))
+    
+    # For versioned models like "claude-sonnet-4-5", also try "claude-4-5-sonnet"
+    # and variations without the version suffix
+    version_match = re.match(r"(.+)-(\d+)-(\d+)$", model_lower)
+    if version_match:
+        base = version_match.group(1)
+        major = version_match.group(2)
+        minor = version_match.group(3)
+        terms.append(f"{base}-{major}.{minor}")  # claude-sonnet-4.5
+        terms.append(f"{base}{major}-{minor}")   # claude-sonnet4-5
+        terms.append(f"{base}{major}.{minor}")   # claude-sonnet4.5
+    
+    # For models with decimal versions like "GPT-5.2", try variations
+    decimal_match = re.match(r"(.+?)[-_]?(\d+)\.(\d+)(.*)$", model_lower)
+    if decimal_match:
+        prefix = decimal_match.group(1).rstrip("-_")
+        major = decimal_match.group(2)
+        minor = decimal_match.group(3)
+        suffix = decimal_match.group(4)
+        terms.append(f"{prefix}-{major}.{minor}{suffix}")
+        terms.append(f"{prefix}{major}.{minor}{suffix}")
+        terms.append(f"{prefix}-{major}-{minor}{suffix}")
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_terms = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            unique_terms.append(term)
+    
+    return unique_terms
+
+
+def check_model_in_litellm_json(content: str, model_id: str) -> bool:
+    """
+    Check if a model exists as a key in the litellm model_prices_and_context_window.json content.
+    
+    This checks for the model name as a JSON key to avoid false positives from
+    partial string matches in comments or other fields.
+    
+    Args:
+        content: The JSON file content (as string)
+        model_id: The model ID to search for
+    
+    Returns:
+        True if the model exists as a key in the JSON
+    """
+    search_terms = get_litellm_model_search_terms(model_id)
+    content_lower = content.lower()
+    
+    for term in search_terms:
+        # Check for the model as a JSON key (surrounded by quotes and followed by colon)
+        # Pattern: "model_name": { or "provider/model_name": {
+        if f'"{term}":' in content_lower or f'/{term}":' in content_lower:
+            return True
+    
+    return False
+
+
 def search_litellm_support(model_id: str) -> Optional[str]:
     """
-    Search for when a model was added to BerriAI/litellm's model_prices_and_context_window.json.
+    Search for when a model was first supported in a LiteLLM release version.
 
-    This uses binary search through commit history via the GitHub API to find 
-    the first commit where the model appears in the model prices file.
+    This finds the first LiteLLM release version (tag) where the model appears
+    in the model_prices_and_context_window.json file, and returns the release date
+    of that version.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of when the model was added, or None if not found
+        ISO timestamp of the LiteLLM version release date, or None if not found
     """
     headers = get_github_headers()
     repo = "BerriAI/litellm"
     file_path = "model_prices_and_context_window.json"
-    model_lower = model_id.lower()
     
     # First, check if model exists in current version
     current_url = f"https://raw.githubusercontent.com/{repo}/main/{file_path}"
@@ -165,61 +242,100 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         if response.status_code != 200:
             return None
             
-        current_content = response.text.lower()
-        if model_lower not in current_content:
+        if not check_model_in_litellm_json(response.text, model_id):
             return None
     except requests.RequestException:
         return None
     
-    # Get commits that modified the model prices file
-    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    all_commits = []
+    # Get all release tags (stable versions only, not nightly/rc/dev)
+    tags_url = f"{GITHUB_API_BASE}/repos/{repo}/tags"
+    all_tags = []
     page = 1
-    max_pages = 10
+    max_pages = 20  # Fetch up to 2000 tags
     
     while page <= max_pages:
-        params = {"path": file_path, "per_page": 100, "page": page}
+        params = {"per_page": 100, "page": page}
         try:
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            response = requests.get(tags_url, headers=headers, params=params, timeout=30)
             if response.status_code != 200:
                 break
-            commits = response.json()
-            if not commits:
+            tags = response.json()
+            if not tags:
                 break
-            all_commits.extend(commits)
-            if len(commits) < 100:
+            # Filter to only stable version tags (v1.x.x format, no -nightly, -rc, -dev, etc.)
+            stable_tags = [
+                t for t in tags 
+                if t.get("name", "").startswith("v") 
+                and "-" not in t.get("name", "")[1:]  # Allow 'v' prefix but no suffixes like -nightly
+            ]
+            all_tags.extend(stable_tags)
+            if len(tags) < 100:
                 break
             page += 1
         except requests.RequestException:
             break
     
-    if not all_commits:
+    if not all_tags:
         return None
     
-    # Binary search to find the first commit where the model exists
-    left, right = 0, len(all_commits) - 1
-    first_commit_with_model = all_commits[0]
+    # Binary search through tags to find the first version that has the model
+    # Tags are in descending order (newest first)
+    left, right = 0, len(all_tags) - 1
+    first_tag_with_model = None
     
     while left <= right:
         mid = (left + right) // 2
-        commit_sha = all_commits[mid].get("sha")
+        tag_name = all_tags[mid].get("name")
+        tag_sha = all_tags[mid].get("commit", {}).get("sha")
         
-        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
+        if not tag_sha:
+            right = mid - 1
+            continue
+        
+        file_url = f"https://raw.githubusercontent.com/{repo}/{tag_sha}/{file_path}"
         try:
             response = requests.get(file_url, headers=headers, timeout=30)
             if response.status_code == 200:
-                content = response.text.lower()
-                if model_lower in content:
-                    first_commit_with_model = all_commits[mid]
-                    left = mid + 1
+                if check_model_in_litellm_json(response.text, model_id):
+                    first_tag_with_model = all_tags[mid]
+                    left = mid + 1  # Search for older tags
                 else:
-                    right = mid - 1
+                    right = mid - 1  # Search for newer tags
             else:
                 right = mid - 1
         except requests.RequestException:
             right = mid - 1
     
-    return first_commit_with_model.get("commit", {}).get("author", {}).get("date")
+    if not first_tag_with_model:
+        return None
+    
+    # Get the release date for this tag
+    tag_name = first_tag_with_model.get("name")
+    tag_sha = first_tag_with_model.get("commit", {}).get("sha")
+    
+    # Try to get release info (which has the actual release date)
+    release_url = f"{GITHUB_API_BASE}/repos/{repo}/releases/tags/{tag_name}"
+    try:
+        response = requests.get(release_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            release_data = response.json()
+            published_at = release_data.get("published_at")
+            if published_at:
+                return published_at
+    except requests.RequestException:
+        pass
+    
+    # Fallback: get the commit date for the tag
+    commit_url = f"{GITHUB_API_BASE}/repos/{repo}/commits/{tag_sha}"
+    try:
+        response = requests.get(commit_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            commit_data = response.json()
+            return commit_data.get("commit", {}).get("author", {}).get("date")
+    except requests.RequestException:
+        pass
+    
+    return None
 
 
 def search_index_results_folder(model_id: str) -> Optional[str]:
