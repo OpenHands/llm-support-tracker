@@ -767,14 +767,31 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
     # Search for eval proxy support
+    # The proxy uses wildcard routing (e.g., anthropic/*, openai/*), so it supports
+    # models as soon as the deployed litellm version supports them.
+    # Default to litellm support, but use later date if proxy-specific work exists.
     print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
     eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
-    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
+    eval_proxy_timestamp = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
+    if eval_proxy_timestamp is not None:
+        result["eval_proxy_timestamp"] = get_later_timestamp(
+            result["litellm_support_timestamp"], eval_proxy_timestamp
+        )
+    else:
+        # Default to litellm support since proxy uses wildcard routing
+        result["eval_proxy_timestamp"] = result["litellm_support_timestamp"]
 
     # Search for prod proxy support
     print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
     prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
-    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
+    prod_proxy_timestamp = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
+    if prod_proxy_timestamp is not None:
+        result["prod_proxy_timestamp"] = get_later_timestamp(
+            result["litellm_support_timestamp"], prod_proxy_timestamp
+        )
+    else:
+        # Default to litellm support since proxy uses wildcard routing
+        result["prod_proxy_timestamp"] = result["litellm_support_timestamp"]
 
     return result
 
