@@ -195,6 +195,7 @@ def check_model_in_litellm_json(content: str, model_id: str) -> bool:
 _litellm_cache = {
     "temp_dir": None,
     "tags": None,
+    "tag_dates": None,
     "current_content": None,
 }
 
@@ -213,7 +214,7 @@ def _get_litellm_repo():
     
     temp_dir = tempfile.mkdtemp(prefix="litellm_")
     
-    # Shallow clone with all tags
+    # Shallow clone with tags - fast initial clone
     subprocess.run(
         ["git", "clone", "--depth=1", "--no-single-branch", repo_url, temp_dir],
         capture_output=True,
@@ -235,9 +236,9 @@ def _get_litellm_repo():
     with open(current_file) as f:
         current_content = f.read()
     
-    # Get all stable version tags
+    # Get all stable version tags with their dates
     result = subprocess.run(
-        ["git", "tag", "-l", "v*"],
+        ["git", "tag", "-l", "v*", "--format=%(refname:short) %(creatordate:iso-strict)"],
         cwd=temp_dir,
         capture_output=True,
         text=True,
@@ -245,12 +246,20 @@ def _get_litellm_repo():
     )
     
     all_tags = []
-    for tag in result.stdout.strip().split("\n"):
+    tag_dates = {}
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split(" ", 1)
+        if len(parts) != 2:
+            continue
+        tag, date = parts
         # Only match stable version tags like v1.2.3 or v1.2.3.4
-        if tag and re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', tag):
+        if re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?$', tag):
             all_tags.append(tag)
+            tag_dates[tag] = date
     
-    # Sort tags by version number (newest first)
+    # Sort tags by version number (newest first for binary search)
     def version_key(tag):
         try:
             parts = tag[1:].split(".")
@@ -262,6 +271,7 @@ def _get_litellm_repo():
     
     _litellm_cache["temp_dir"] = temp_dir
     _litellm_cache["tags"] = all_tags
+    _litellm_cache["tag_dates"] = tag_dates
     _litellm_cache["current_content"] = current_content
     
     return _litellm_cache
@@ -274,6 +284,7 @@ def cleanup_litellm_cache():
         shutil.rmtree(_litellm_cache["temp_dir"], ignore_errors=True)
         _litellm_cache["temp_dir"] = None
         _litellm_cache["tags"] = None
+        _litellm_cache["tag_dates"] = None
         _litellm_cache["current_content"] = None
 
 
@@ -281,8 +292,8 @@ def search_litellm_support(model_id: str) -> Optional[str]:
     """
     Search for when a model was first supported in a LiteLLM stable release.
 
-    This uses a cached clone of the litellm repo and finds the first stable
-    release version (tag) where the model appears in model_prices_and_context_window.json.
+    Uses binary search through stable release tags to find the first version
+    that includes the model in model_prices_and_context_window.json.
 
     Args:
         model_id: The language model ID to search for
@@ -298,6 +309,7 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         cache = _get_litellm_repo()
         temp_dir = cache["temp_dir"]
         all_tags = cache["tags"]
+        tag_dates = cache["tag_dates"]
         current_content = cache["current_content"]
         
         # Check if model exists in current version
@@ -309,7 +321,8 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         
         current_file = os.path.join(temp_dir, file_path)
         
-        # Binary search to find first tag with the model
+        # Binary search through tags (sorted newest first)
+        # Find the oldest tag that has the model
         left, right = 0, len(all_tags) - 1
         first_tag_with_model = None
         
@@ -317,39 +330,25 @@ def search_litellm_support(model_id: str) -> Optional[str]:
             mid = (left + right) // 2
             tag = all_tags[mid]
             
-            # Checkout the tag and check if model exists
-            subprocess.run(
-                ["git", "checkout", tag, "--", file_path],
+            # Use git show to read file at tag (faster than checkout)
+            result = subprocess.run(
+                ["git", "show", f"{tag}:{file_path}"],
                 cwd=temp_dir,
                 capture_output=True,
+                text=True,
                 timeout=30,
             )
             
-            try:
-                with open(current_file) as f:
-                    content = f.read()
-                
-                if check_model_in_litellm_json(content, model_id):
-                    first_tag_with_model = tag
-                    left = mid + 1  # Search for older tags
-                else:
-                    right = mid - 1  # Search for newer tags
-            except (FileNotFoundError, IOError):
-                right = mid - 1
+            if result.returncode == 0 and check_model_in_litellm_json(result.stdout, model_id):
+                first_tag_with_model = tag
+                left = mid + 1  # Search for older tags
+            else:
+                right = mid - 1  # Search for newer tags
         
         if not first_tag_with_model:
             return None
         
-        # Get the commit date for this tag
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%aI", first_tag_with_model],
-            cwd=temp_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        
-        return result.stdout.strip() or None
+        return tag_dates.get(first_tag_with_model)
         
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         print(f"Warning: Error searching litellm: {e}", file=sys.stderr)

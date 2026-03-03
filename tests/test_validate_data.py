@@ -14,6 +14,7 @@ from validate_data import (
     parse_timestamp,
     validate_required_fields,
     validate_timestamp_formats,
+    validate_proxy_after_litellm,
     validate_data,
 )
 
@@ -114,6 +115,56 @@ class TestValidateTimestampFormats:
             "eval_proxy_timestamp": None,
         }
         errors = validate_timestamp_formats(model)
+        assert len(errors) == 0
+
+
+class TestValidateProxyAfterLitellm:
+    """Tests for validate_proxy_after_litellm function."""
+
+    def test_valid_order(self):
+        """Test when proxy support is after litellm support."""
+        model = {
+            "model_id": "test-model",
+            "litellm_support_timestamp": "2024-01-10T10:00:00Z",
+            "eval_proxy_timestamp": "2024-01-15T10:00:00Z",
+            "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
+        }
+        errors = validate_proxy_after_litellm(model)
+        assert len(errors) == 0
+
+    def test_eval_proxy_before_litellm(self):
+        """Test error when eval proxy is before litellm."""
+        model = {
+            "model_id": "test-model",
+            "litellm_support_timestamp": "2024-01-15T10:00:00Z",
+            "eval_proxy_timestamp": "2024-01-10T10:00:00Z",
+            "prod_proxy_timestamp": None,
+        }
+        errors = validate_proxy_after_litellm(model)
+        assert len(errors) == 1
+        assert "eval_proxy_timestamp" in errors[0]
+
+    def test_prod_proxy_before_litellm(self):
+        """Test error when prod proxy is before litellm."""
+        model = {
+            "model_id": "test-model",
+            "litellm_support_timestamp": "2024-01-15T10:00:00Z",
+            "eval_proxy_timestamp": None,
+            "prod_proxy_timestamp": "2024-01-10T10:00:00Z",
+        }
+        errors = validate_proxy_after_litellm(model)
+        assert len(errors) == 1
+        assert "prod_proxy_timestamp" in errors[0]
+
+    def test_no_litellm_support(self):
+        """Test when litellm support is not set (no validation possible)."""
+        model = {
+            "model_id": "test-model",
+            "litellm_support_timestamp": None,
+            "eval_proxy_timestamp": "2024-01-15T10:00:00Z",
+            "prod_proxy_timestamp": "2024-01-20T10:00:00Z",
+        }
+        errors = validate_proxy_after_litellm(model)
         assert len(errors) == 0
 
 

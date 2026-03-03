@@ -5,6 +5,7 @@ Validate the LLM support data for logical consistency.
 Rules:
 - Required fields: model_id, release_date
 - Timestamps should be valid ISO format
+- Proxy support must not be before litellm support (proxy deploys litellm versions)
 """
 
 import argparse
@@ -90,6 +91,40 @@ def validate_timestamp_formats(model: dict) -> list[str]:
     return errors
 
 
+def validate_proxy_after_litellm(model: dict) -> list[str]:
+    """
+    Validate that proxy support timestamps are not before litellm support.
+    
+    The proxy (All-Hands-AI/infra) deploys litellm versions, so by definition
+    proxy support cannot happen before litellm adds the model.
+    
+    Returns a list of error messages (empty if valid).
+    """
+    errors = []
+    model_id = model.get("model_id", "unknown")
+    
+    litellm_ts = parse_timestamp(model.get("litellm_support_timestamp"))
+    eval_proxy_ts = parse_timestamp(model.get("eval_proxy_timestamp"))
+    prod_proxy_ts = parse_timestamp(model.get("prod_proxy_timestamp"))
+    
+    if litellm_ts is None:
+        return errors
+    
+    if eval_proxy_ts is not None and eval_proxy_ts < litellm_ts:
+        errors.append(
+            f"{model_id}: eval_proxy_timestamp ({model.get('eval_proxy_timestamp')}) "
+            f"is before litellm_support_timestamp ({model.get('litellm_support_timestamp')})"
+        )
+    
+    if prod_proxy_ts is not None and prod_proxy_ts < litellm_ts:
+        errors.append(
+            f"{model_id}: prod_proxy_timestamp ({model.get('prod_proxy_timestamp')}) "
+            f"is before litellm_support_timestamp ({model.get('litellm_support_timestamp')})"
+        )
+    
+    return errors
+
+
 def validate_data(data_file: Path) -> list[str]:
     """
     Validate all models in the data file.
@@ -103,6 +138,7 @@ def validate_data(data_file: Path) -> list[str]:
     for model in models:
         all_errors.extend(validate_required_fields(model))
         all_errors.extend(validate_timestamp_formats(model))
+        all_errors.extend(validate_proxy_after_litellm(model))
     
     return all_errors
 
