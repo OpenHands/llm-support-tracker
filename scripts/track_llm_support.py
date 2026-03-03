@@ -185,9 +185,9 @@ def search_litellm_support(model_id: str) -> Optional[str]:
     headers = get_github_headers()
     repo = "BerriAI/litellm"
     file_path = "model_prices_and_context_window.json"
-    model_lower = model_id.lower()
+    search_terms = get_model_search_terms(model_id)
     
-    # First, check if model exists in current version
+    # First, check if model exists in current version using any search term
     current_url = f"https://raw.githubusercontent.com/{repo}/main/{file_path}"
     try:
         response = requests.get(current_url, headers=headers, timeout=30)
@@ -195,7 +195,12 @@ def search_litellm_support(model_id: str) -> Optional[str]:
             return None
             
         current_content = response.text.lower()
-        if model_lower not in current_content:
+        found = False
+        for term in search_terms:
+            if term.lower() in current_content:
+                found = True
+                break
+        if not found:
             return None
     except requests.RequestException:
         return None
@@ -225,6 +230,14 @@ def search_litellm_support(model_id: str) -> Optional[str]:
     if not all_commits:
         return None
     
+    def content_has_model(content: str) -> bool:
+        """Check if any search term appears in the content."""
+        content_lower = content.lower()
+        for term in search_terms:
+            if term.lower() in content_lower:
+                return True
+        return False
+    
     # Binary search to find the first commit where the model exists
     left, right = 0, len(all_commits) - 1
     first_commit_with_model = all_commits[0]
@@ -237,8 +250,7 @@ def search_litellm_support(model_id: str) -> Optional[str]:
         try:
             response = requests.get(file_url, headers=headers, timeout=30)
             if response.status_code == 200:
-                content = response.text.lower()
-                if model_lower in content:
+                if content_has_model(response.text):
                     first_commit_with_model = all_commits[mid]
                     left = mid + 1
                 else:
@@ -812,12 +824,6 @@ def main():
         required=True,
         help="Release date of the model (ISO format, e.g., 2024-01-15)",
     )
-    parser.add_argument(
-        "--output",
-        "-o",
-        required=True,
-        help="Output JSON file path",
-    )
 
     args = parser.parse_args()
 
@@ -831,17 +837,6 @@ def main():
 
     # Track LLM support
     result = track_llm_support(args.model_id, args.release_date)
-
-    # Ensure output directory exists
-    output_dir = os.path.dirname(args.output)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-    # Write output
-    with open(args.output, "w") as f:
-        json.dump(result, f, indent=2)
-
-    print(f"\nResults written to {args.output}")
     print(json.dumps(result, indent=2))
 
 
