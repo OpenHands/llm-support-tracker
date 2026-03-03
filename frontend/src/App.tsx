@@ -117,40 +117,125 @@ export function computeDaysUnsupported(
   return result;
 }
 
+export function applyRollingAverage(
+  data: Map<string, number>,
+  sortedDates: string[],
+  windowDays: number = 30
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  for (let i = 0; i < sortedDates.length; i++) {
+    const currentDate = new Date(sortedDates[i]);
+    let sum = 0;
+    let count = 0;
+
+    // Look back windowDays days
+    for (let j = i; j >= 0; j--) {
+      const pastDate = new Date(sortedDates[j]);
+      const diffDays = (currentDate.getTime() - pastDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays > windowDays) break;
+
+      const value = data.get(sortedDates[j]);
+      if (value !== undefined) {
+        sum += value;
+        count++;
+      }
+    }
+
+    result.set(sortedDates[i], count > 0 ? Math.round(sum / count) : 0);
+  }
+
+  return result;
+}
+
+// Generate consistent weekly sample dates (every Sunday) within a date range
+export function getWeeklySampleDates(startDate: string, endDate: string): string[] {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const result: string[] = [];
+
+  // Find the first Sunday on or after start
+  const current = new Date(start);
+  const dayOfWeek = current.getDay();
+  if (dayOfWeek !== 0) {
+    current.setDate(current.getDate() + (7 - dayOfWeek));
+  }
+
+  while (current <= end) {
+    result.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 7);
+  }
+
+  // Always include the end date if it's not already included
+  const endStr = end.toISOString().split('T')[0];
+  if (result.length === 0 || result[result.length - 1] !== endStr) {
+    result.push(endStr);
+  }
+
+  return result;
+}
+
 export function computeFamilyChartData(
   models: ModelSupport[],
-  modelPattern: RegExp
+  modelPattern: RegExp,
+  sampleDates?: string[]
 ): DaysUnsupportedDataPoint[] {
   const aspects: Aspect[] = ['litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'];
 
-  const aspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
+  const rawAspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
   for (const aspect of aspects) {
     const data = computeDaysUnsupported(models, modelPattern, aspect);
-    aspectData[aspect] = new Map(data.map((d) => [d.date, d.daysUnsupported]));
+    rawAspectData[aspect] = new Map(data.map((d) => [d.date, d.daysUnsupported]));
   }
 
   const allDates = new Set<string>();
   for (const aspect of aspects) {
-    for (const date of aspectData[aspect].keys()) {
+    for (const date of rawAspectData[aspect].keys()) {
       allDates.add(date);
     }
   }
 
   const sortedDates = Array.from(allDates).sort();
+  if (sortedDates.length === 0) return [];
 
-  // Sample weekly to reduce data points
-  const weeklyDates = sortedDates.filter((_, index) => index % 7 === 0 || index === sortedDates.length - 1);
+  // Apply 30-day rolling average to smooth the data
+  const smoothedAspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
+  for (const aspect of aspects) {
+    smoothedAspectData[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 30);
+  }
 
-  return weeklyDates.map((date) => ({
-    date,
-    litellm: aspectData.litellm.get(date) ?? 0,
-    eval_proxy: aspectData.eval_proxy.get(date) ?? 0,
-    prod_proxy: aspectData.prod_proxy.get(date) ?? 0,
-    sdk: aspectData.sdk.get(date) ?? 0,
-    frontend: aspectData.frontend.get(date) ?? 0,
-    index: aspectData.index.get(date) ?? 0,
-    complete: aspectData.complete.get(date) ?? 0,
-  }));
+  // Use provided sample dates or generate weekly dates
+  const weeklyDates = sampleDates ?? getWeeklySampleDates(sortedDates[0], sortedDates[sortedDates.length - 1]);
+
+  // Filter to dates that exist in our data range
+  const validDates = weeklyDates.filter((date) => date >= sortedDates[0] && date <= sortedDates[sortedDates.length - 1]);
+
+  return validDates.map((date) => {
+    // For dates that don't have exact data, find the closest previous date
+    const getValueForDate = (aspectData: Map<string, number>, targetDate: string): number => {
+      if (aspectData.has(targetDate)) {
+        return aspectData.get(targetDate)!;
+      }
+      // Find closest previous date
+      for (let i = sortedDates.length - 1; i >= 0; i--) {
+        if (sortedDates[i] <= targetDate && aspectData.has(sortedDates[i])) {
+          return aspectData.get(sortedDates[i])!;
+        }
+      }
+      return 0;
+    };
+
+    return {
+      date,
+      litellm: getValueForDate(smoothedAspectData.litellm, date),
+      eval_proxy: getValueForDate(smoothedAspectData.eval_proxy, date),
+      prod_proxy: getValueForDate(smoothedAspectData.prod_proxy, date),
+      sdk: getValueForDate(smoothedAspectData.sdk, date),
+      frontend: getValueForDate(smoothedAspectData.frontend, date),
+      index: getValueForDate(smoothedAspectData.index, date),
+      complete: getValueForDate(smoothedAspectData.complete, date),
+    };
+  });
 }
 
 interface AverageDataPoint {
@@ -167,15 +252,42 @@ interface AverageDataPoint {
 export function computeAverageChartData(
   familyData: Record<string, DaysUnsupportedDataPoint[]>
 ): AverageDataPoint[] {
+  const families = Object.keys(familyData);
+  if (families.length === 0) return [];
+
+  // All families should now share the same dates since we use consistent sampling
+  // Build a map from date -> family -> data for quick lookups
+  const familyMaps: Record<string, Map<string, DaysUnsupportedDataPoint>> = {};
+  for (const family of families) {
+    familyMaps[family] = new Map(familyData[family].map((p) => [p.date, p]));
+  }
+
+  // Find the date range where ALL families have data
+  const familyDateRanges = families.map((family) => {
+    const dates = familyData[family].map((p) => p.date).sort();
+    return { start: dates[0], end: dates[dates.length - 1] };
+  });
+
+  const latestStart = familyDateRanges.reduce(
+    (max, range) => (range.start > max ? range.start : max),
+    familyDateRanges[0].start
+  );
+  const earliestEnd = familyDateRanges.reduce(
+    (min, range) => (range.end < min ? range.end : min),
+    familyDateRanges[0].end
+  );
+
+  // Get all unique dates within the common range
   const allDates = new Set<string>();
-  for (const family of Object.values(familyData)) {
-    for (const point of family) {
-      allDates.add(point.date);
+  for (const family of families) {
+    for (const point of familyData[family]) {
+      if (point.date >= latestStart && point.date <= earliestEnd) {
+        allDates.add(point.date);
+      }
     }
   }
 
   const sortedDates = Array.from(allDates).sort();
-  const families = Object.keys(familyData);
 
   return sortedDates.map((date) => {
     const aspects: (keyof Omit<DaysUnsupportedDataPoint, 'date'>)[] = [
@@ -188,7 +300,7 @@ export function computeAverageChartData(
       let sum = 0;
       let count = 0;
       for (const family of families) {
-        const point = familyData[family].find((p) => p.date === date);
+        const point = familyMaps[family].get(date);
         if (point) {
           sum += point[aspect];
           count++;
@@ -374,9 +486,15 @@ function App() {
   const daysUnsupportedData = useMemo(() => {
     if (models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
 
+    // First, determine the global date range across all families for consistent sampling
+    const allReleaseDates = models.map((m) => m.release_date).sort();
+    const globalStart = allReleaseDates[0];
+    const globalEnd = new Date().toISOString().split('T')[0];
+    const sharedSampleDates = getWeeklySampleDates(globalStart, globalEnd);
+
     const familyData: Record<string, DaysUnsupportedDataPoint[]> = {};
     for (const [familyName, pattern] of Object.entries(MODEL_FAMILIES)) {
-      familyData[familyName] = computeFamilyChartData(models, pattern);
+      familyData[familyName] = computeFamilyChartData(models, pattern, sharedSampleDates);
     }
 
     const averageData = computeAverageChartData(familyData);
