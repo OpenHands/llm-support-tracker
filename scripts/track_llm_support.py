@@ -52,13 +52,17 @@ def get_github_headers() -> dict:
 def get_model_search_terms(model_id: str) -> list[str]:
     """
     Get a list of search terms for a model, including the full name and family names.
-    
-    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3"]
+
+    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3", "gemini-3-pro"]
     """
     import re
-    
+
     terms = [model_id]
-    
+
+    # Add lowercase version
+    if model_id.lower() not in terms:
+        terms.append(model_id.lower())
+
     # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
     suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
     for suffix in suffixes:
@@ -66,32 +70,57 @@ def get_model_search_terms(model_id: str) -> list[str]:
             base = model_id[:-len(suffix)]
             if base not in terms:
                 terms.append(base)
-    
+            if base.lower() not in terms:
+                terms.append(base.lower())
+
     # Also try with spaces instead of hyphens
     spaced = model_id.replace("-", " ")
     if spaced not in terms:
         terms.append(spaced)
-    
+
     # For versioned models like "claude-sonnet-4-5", also try "claude-sonnet-4"
     version_match = re.match(r"(.+)-(\d+)-(\d+)$", model_id)
     if version_match:
         base_with_major = f"{version_match.group(1)}-{version_match.group(2)}"
         if base_with_major not in terms:
             terms.append(base_with_major)
-    
+
     # For models like "Qwen3-Coder-480B", also try "qwen-3-coder" (lowercase with hyphen)
     # Convert "Qwen3" to "qwen-3", "GPT5" to "gpt-5", etc.
     normalized = re.sub(r'([a-zA-Z])(\d)', r'\1-\2', model_id).lower()
     if normalized not in terms:
         terms.append(normalized)
-    
+
+    # Try removing version numbers entirely for models like "DeepSeek-V3.2-Reasoner" -> "deepseek-reasoner"
+    # Remove patterns like V3.2, -3-, etc.
+    no_version = re.sub(r'-?[Vv]?\d+\.?\d*-?', '-', model_id).strip('-')
+    no_version = re.sub(r'--+', '-', no_version)  # Clean up double hyphens
+    if no_version not in terms:
+        terms.append(no_version)
+    if no_version.lower() not in terms:
+        terms.append(no_version.lower())
+
+    # For "Nemotron-3-Nano" type models, try "nemotron-nano" (remove middle version number)
+    parts = model_id.split('-')
+    if len(parts) >= 3:
+        # Try removing middle numeric parts
+        non_numeric_parts = [p for p in parts if not p.isdigit()]
+        if len(non_numeric_parts) >= 2:
+            joined = '-'.join(non_numeric_parts)
+            if joined not in terms:
+                terms.append(joined)
+            if joined.lower() not in terms:
+                terms.append(joined.lower())
+
     # Also try just the model family name (e.g., "Qwen" from "Qwen3-Coder-480B")
     family_match = re.match(r'^([A-Za-z]+)', model_id)
     if family_match:
         family = family_match.group(1)
         if family not in terms and len(family) > 2:
             terms.append(family)
-    
+        if family.lower() not in terms and len(family) > 2:
+            terms.append(family.lower())
+
     return terms
 
 
@@ -396,63 +425,146 @@ def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]
     return None
 
 
+def extract_litellm_version_from_yaml(yaml_content: str) -> Optional[str]:
+    """
+    Extract the litellm version from a litellm.yaml file content.
+
+    The version is in the image.tag field, e.g., "v1.81.9-stable.gemini.3.1-pro.sonnet-4.6"
+    We extract just the version number part (e.g., "v1.81.9").
+
+    Args:
+        yaml_content: The YAML file content
+
+    Returns:
+        The litellm version string, or None if not found
+    """
+    import re
+
+    # Look for image tag pattern
+    # Can be in format: tag: v1.81.9-stable or tag: "v1.81.9-stable"
+    match = re.search(r'tag:\s*["\']?(v[\d.]+)', yaml_content)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def check_litellm_version_supports_model(version: str, model_id: str) -> bool:
+    """
+    Check if a specific litellm version supports a model.
+
+    Args:
+        version: Litellm version tag (e.g., "v1.81.9")
+        model_id: The model ID to check
+
+    Returns:
+        True if the version supports the model, False otherwise
+    """
+    headers = get_github_headers()
+    search_terms = get_model_search_terms(model_id)
+
+    # Fetch model_prices_and_context_window.json at this version
+    file_url = f"https://raw.githubusercontent.com/BerriAI/litellm/{version}/model_prices_and_context_window.json"
+
+    try:
+        response = requests.get(file_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            content = response.text.lower()
+            # Check if any search term appears in the file
+            for term in search_terms:
+                if term.lower() in content:
+                    return True
+    except requests.RequestException:
+        pass
+
+    return False
+
+
 def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
     """
-    Search for when a model was added to the infra proxy configuration.
+    Search for when a model was first supported in the infra proxy deployment.
 
-    This searches:
-    1. Commit messages for explicit model name mentions
-    2. Provider wildcard routing (e.g., anthropic/* for claude models)
+    This works by:
+    1. Getting the commit history of the litellm.yaml file
+    2. For each commit (oldest to newest), extracting the deployed litellm version
+    3. Checking if that litellm version supports the model
+    4. Returning the date of the first deployment where the model is supported
 
     Args:
         model_id: The language model ID to search for
         proxy_type: Either "eval_proxy" or "prod_proxy"
 
     Returns:
-        ISO timestamp of when the model was added, or None if not found
+        ISO timestamp of when the model was first supported, or None if not found
     """
     headers = get_github_headers()
     repo = REPOS["infra"]
     path = SEARCH_PATHS[proxy_type][0]
 
-    # Get commits that modified the litellm.yaml file
+    # Get commit history for the litellm.yaml file
     commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    params = {"path": path, "per_page": 100}
+    all_commits = []
+    page = 1
+    max_pages = 10
 
-    try:
-        response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-        if response.status_code == 200:
+    while page <= max_pages:
+        params = {"path": path, "per_page": 100, "page": page}
+        try:
+            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            if response.status_code != 200:
+                break
             commits = response.json()
-            
-            # Search through commits for model name (case-insensitive)
-            model_lower = model_id.lower()
-            matching_commits = []
-            
-            for commit in commits:
-                message = commit.get("commit", {}).get("message", "").lower()
-                commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                
-                if not commit_date:
-                    continue
-                    
-                # Check if model name appears in commit message
-                if model_lower in message:
-                    matching_commits.append(commit_date)
-            
-            # If found explicit model mention, return it
-            if matching_commits:
-                return matching_commits[-1]  # Last in list is oldest
-                
-    except requests.RequestException as e:
-        print(f"Warning: Error searching {proxy_type} commits: {e}", file=sys.stderr)
+            if not commits:
+                break
+            all_commits.extend(commits)
+            if len(commits) < 100:
+                break
+            page += 1
+        except requests.RequestException:
+            break
 
-    # If no explicit mention, check for provider wildcard support
-    # Try all possible providers (primary provider first, then fallbacks like hosted_vllm, openrouter)
-    providers = get_providers_from_model(model_id)
-    for provider in providers:
-        wildcard_date = check_wildcard_in_file(repo, path, provider)
-        if wildcard_date:
-            return wildcard_date
+    if not all_commits:
+        return None
+
+    # Track which versions we've already checked to avoid redundant API calls
+    checked_versions: dict[str, bool] = {}
+
+    # Go through commits from oldest to newest
+    for commit in reversed(all_commits):
+        commit_sha = commit.get("sha")
+        commit_date = commit.get("commit", {}).get("author", {}).get("date")
+
+        if not commit_sha or not commit_date:
+            continue
+
+        # Fetch litellm.yaml at this commit
+        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
+        try:
+            file_response = requests.get(file_url, headers=headers, timeout=30)
+            if file_response.status_code != 200:
+                continue
+
+            yaml_content = file_response.text
+            version = extract_litellm_version_from_yaml(yaml_content)
+
+            if not version:
+                continue
+
+            # Check if we've already verified this version
+            if version in checked_versions:
+                if checked_versions[version]:
+                    return commit_date
+                continue
+
+            # Check if this litellm version supports the model
+            supports_model = check_litellm_version_supports_model(version, model_id)
+            checked_versions[version] = supports_model
+
+            if supports_model:
+                return commit_date
+
+        except requests.RequestException:
+            continue
 
     return None
 
