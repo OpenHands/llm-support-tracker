@@ -625,6 +625,32 @@ def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> 
         return timestamp
 
 
+def model_in_frontend_file(content: str, model_id: str) -> bool:
+    """
+    Check if a model ID appears in a frontend file as a complete identifier.
+    
+    Looks for the model as a quoted string (e.g., "model-name" or 'model-name')
+    to avoid false positives from substring matches.
+    
+    Args:
+        content: The file content (will be searched case-insensitively)
+        model_id: The model ID to search for
+        
+    Returns:
+        True if the model appears as a complete quoted identifier
+    """
+    model_lower = model_id.lower()
+    content_lower = content.lower()
+    
+    # Check for model as a quoted string: "model-name" or 'model-name'
+    if f'"{model_lower}"' in content_lower:
+        return True
+    if f"'{model_lower}'" in content_lower:
+        return True
+    
+    return False
+
+
 def search_model_in_file_history(
     repo: str, file_path: str, model_id: str
 ) -> Optional[str]:
@@ -632,7 +658,8 @@ def search_model_in_file_history(
     Search for when a model first appeared in a file by checking commit history.
 
     Goes through the commit history of the file from oldest to newest and finds
-    the first commit where the model ID appears in the file content.
+    the first commit where the model ID appears in the file content as a complete
+    quoted identifier (to avoid substring false positives).
 
     Args:
         repo: Repository in format "owner/repo"
@@ -643,9 +670,6 @@ def search_model_in_file_history(
         ISO timestamp of the first commit where model appears, or None if not found
     """
     headers = get_github_headers()
-    
-    # Search for the exact model name (lowercase since we lowercase file content)
-    search_term = model_id.lower()
 
     # Get commit history for the file
     commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
@@ -685,10 +709,10 @@ def search_model_in_file_history(
         try:
             file_response = requests.get(file_url, headers=headers, timeout=30)
             if file_response.status_code == 200:
-                content = file_response.text.lower()
+                content = file_response.text
 
-                # Check if the exact model name appears in the file
-                if search_term in content:
+                # Check if the model appears as a complete quoted identifier
+                if model_in_frontend_file(content, model_id):
                     return commit_date
         except requests.RequestException:
             continue
