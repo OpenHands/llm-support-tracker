@@ -90,6 +90,9 @@ def main():
 
     os.makedirs(data_dir, exist_ok=True)
 
+    # Use a temporary file for individual model results
+    import tempfile
+
     results = []
     for model in models:
         print(f"\n{'='*60}")
@@ -99,7 +102,9 @@ def main():
         # Get release date (use default if not known)
         release_date = MODEL_RELEASE_DATES.get(model, "2025-01-01")
 
-        output_file = os.path.join(data_dir, f"{model}.json")
+        # Use a temporary file instead of per-model files
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+            tmp_file = tmp.name
 
         try:
             subprocess.run(
@@ -111,13 +116,13 @@ def main():
                     "--release-date",
                     release_date,
                     "--output",
-                    output_file,
+                    tmp_file,
                 ],
                 check=True,
             )
 
             # Load the result
-            with open(output_file) as f:
+            with open(tmp_file) as f:
                 result = json.load(f)
                 results.append(result)
 
@@ -125,15 +130,18 @@ def main():
             print(f"Error processing {model}: {e}")
         except Exception as e:
             print(f"Error processing {model}: {e}")
+        finally:
+            # Clean up temporary file
+            if os.path.exists(tmp_file):
+                os.unlink(tmp_file)
 
-    # Write combined results
+    # Write combined results to a single file
     combined_output = os.path.join(data_dir, "all_models.json")
     with open(combined_output, "w") as f:
         json.dump(results, f, indent=2)
 
     print(f"\n{'='*60}")
     print(f"All results written to {combined_output}")
-    print(f"Individual results in {data_dir}/")
 
 
 if __name__ == "__main__":

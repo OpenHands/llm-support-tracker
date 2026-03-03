@@ -7,13 +7,23 @@ This repository tracks when language models are supported across the OpenHands e
 
 ## Usage
 
-### Running the Script
+### Running the Script for All Models
+
+The recommended way to track all models is to use the `run_all_models.py` script, which outputs a single `data/all_models.json` file:
+
+```bash
+python scripts/run_all_models.py
+```
+
+### Running for a Single Model
+
+To track a single model, use the `track_llm_support.py` script:
 
 ```bash
 python scripts/track_llm_support.py \
   --model-id "claude-opus-4-5" \
   --release-date "2025-11-01" \
-  --output "data/claude-opus-4-5.json"
+  --output "/tmp/model_result.json"
 ```
 
 ### Arguments
@@ -24,16 +34,21 @@ python scripts/track_llm_support.py \
 
 ### Output Format
 
-The script outputs a JSON file with the following structure:
+The `data/all_models.json` file contains an array of model support data:
 
 ```json
-{
-  "model_id": "claude-opus-4-5",
-  "release_date": "2025-11-01",
-  "sdk_support_timestamp": "2025-11-15T10:30:00Z",
-  "frontend_support_timestamp": "2025-11-20T14:00:00Z",
-  "index_results_timestamp": "2025-11-25T09:00:00Z"
-}
+[
+  {
+    "model_id": "claude-opus-4-5",
+    "release_date": "2025-11-01",
+    "sdk_support_timestamp": "2025-11-15T10:30:00Z",
+    "frontend_support_timestamp": "2025-11-20T14:00:00Z",
+    "index_results_timestamp": "2025-11-25T09:00:00Z",
+    "eval_proxy_timestamp": "2025-11-12T08:00:00Z",
+    "prod_proxy_timestamp": "2025-11-18T12:00:00Z",
+    "litellm_support_timestamp": "2025-11-10T16:30:00Z"
+  }
+]
 ```
 
 ## Frontend
