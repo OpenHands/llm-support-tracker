@@ -178,7 +178,8 @@ export function getWeeklySampleDates(startDate: string, endDate: string): string
 export function computeFamilyChartData(
   models: ModelSupport[],
   modelPattern: RegExp,
-  sampleDates?: string[]
+  sampleDates?: string[],
+  useSmoothing: boolean = true
 ): DaysUnsupportedDataPoint[] {
   const aspects: Aspect[] = ['litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'];
 
@@ -198,10 +199,15 @@ export function computeFamilyChartData(
   const sortedDates = Array.from(allDates).sort();
   if (sortedDates.length === 0) return [];
 
-  // Apply 30-day rolling average to smooth the data
-  const smoothedAspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
-  for (const aspect of aspects) {
-    smoothedAspectData[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 30);
+  // Apply 30-day rolling average to smooth the data (if enabled)
+  const aspectDataToUse: Record<Aspect, Map<string, number>> = useSmoothing
+    ? {} as Record<Aspect, Map<string, number>>
+    : rawAspectData;
+  
+  if (useSmoothing) {
+    for (const aspect of aspects) {
+      aspectDataToUse[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 30);
+    }
   }
 
   // Use provided sample dates or generate weekly dates
@@ -227,13 +233,13 @@ export function computeFamilyChartData(
 
     return {
       date,
-      litellm: getValueForDate(smoothedAspectData.litellm, date),
-      eval_proxy: getValueForDate(smoothedAspectData.eval_proxy, date),
-      prod_proxy: getValueForDate(smoothedAspectData.prod_proxy, date),
-      sdk: getValueForDate(smoothedAspectData.sdk, date),
-      frontend: getValueForDate(smoothedAspectData.frontend, date),
-      index: getValueForDate(smoothedAspectData.index, date),
-      complete: getValueForDate(smoothedAspectData.complete, date),
+      litellm: getValueForDate(aspectDataToUse.litellm, date),
+      eval_proxy: getValueForDate(aspectDataToUse.eval_proxy, date),
+      prod_proxy: getValueForDate(aspectDataToUse.prod_proxy, date),
+      sdk: getValueForDate(aspectDataToUse.sdk, date),
+      frontend: getValueForDate(aspectDataToUse.frontend, date),
+      index: getValueForDate(aspectDataToUse.index, date),
+      complete: getValueForDate(aspectDataToUse.complete, date),
     };
   });
 }
@@ -355,6 +361,7 @@ function App() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [useSmoothing, setUseSmoothing] = useState(true);
 
   useEffect(() => {
     fetch('/all_models.json')
@@ -392,96 +399,6 @@ function App() {
     }
   };
 
-  // Compute rolling average data for charts
-  const chartData = useMemo(() => {
-    if (models.length === 0) return [];
-
-    // Sort models by release date
-    const sortedByRelease = [...models].sort(
-      (a, b) => new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
-    );
-
-    // Get date range
-    const minDate = new Date(sortedByRelease[0].release_date);
-    const maxDate = new Date();
-    
-    const data: Array<{
-      date: string;
-      sdkPercent: number;
-      frontendPercent: number;
-      litellmPercent: number;
-      evalProxyPercent: number;
-      prodProxyPercent: number;
-      indexPercent: number;
-      sdkAvgDays: number | null;
-      frontendAvgDays: number | null;
-      litellmAvgDays: number | null;
-      evalProxyAvgDays: number | null;
-      prodProxyAvgDays: number | null;
-      indexAvgDays: number | null;
-    }> = [];
-
-    // Generate data points for each month
-    const currentDate = new Date(minDate);
-    while (currentDate <= maxDate) {
-      const windowEnd = new Date(currentDate);
-      const windowStart = new Date(currentDate);
-      windowStart.setDate(windowStart.getDate() - 60);
-
-      // Get models released within the 60-day window before this date
-      const modelsInWindow = sortedByRelease.filter((m) => {
-        const releaseDate = new Date(m.release_date);
-        return releaseDate >= windowStart && releaseDate <= windowEnd;
-      });
-
-      if (modelsInWindow.length > 0) {
-        // Calculate support percentages
-        const sdkSupported = modelsInWindow.filter((m) => m.sdk_support_timestamp).length;
-        const frontendSupported = modelsInWindow.filter((m) => m.frontend_support_timestamp).length;
-        const litellmSupported = modelsInWindow.filter((m) => m.litellm_support_timestamp).length;
-        const evalProxySupported = modelsInWindow.filter((m) => m.eval_proxy_timestamp).length;
-        const prodProxySupported = modelsInWindow.filter((m) => m.prod_proxy_timestamp).length;
-        const indexSupported = modelsInWindow.filter((m) => m.index_results_timestamp).length;
-
-        // Calculate average support time (days from release to support)
-        const calcAvgDays = (
-          models: ModelSupport[],
-          timestampField: keyof ModelSupport
-        ): number | null => {
-          const supported = models.filter((m) => m[timestampField]);
-          if (supported.length === 0) return null;
-          const totalDays = supported.reduce((sum, m) => {
-            const releaseDate = new Date(m.release_date);
-            const supportDate = new Date(m[timestampField] as string);
-            return sum + Math.max(0, (supportDate.getTime() - releaseDate.getTime()) / (1000 * 60 * 60 * 24));
-          }, 0);
-          return Math.round(totalDays / supported.length);
-        };
-
-        data.push({
-          date: currentDate.toISOString().split('T')[0],
-          sdkPercent: Math.round((sdkSupported / modelsInWindow.length) * 100),
-          frontendPercent: Math.round((frontendSupported / modelsInWindow.length) * 100),
-          litellmPercent: Math.round((litellmSupported / modelsInWindow.length) * 100),
-          evalProxyPercent: Math.round((evalProxySupported / modelsInWindow.length) * 100),
-          prodProxyPercent: Math.round((prodProxySupported / modelsInWindow.length) * 100),
-          indexPercent: Math.round((indexSupported / modelsInWindow.length) * 100),
-          sdkAvgDays: calcAvgDays(modelsInWindow, 'sdk_support_timestamp'),
-          frontendAvgDays: calcAvgDays(modelsInWindow, 'frontend_support_timestamp'),
-          litellmAvgDays: calcAvgDays(modelsInWindow, 'litellm_support_timestamp'),
-          evalProxyAvgDays: calcAvgDays(modelsInWindow, 'eval_proxy_timestamp'),
-          prodProxyAvgDays: calcAvgDays(modelsInWindow, 'prod_proxy_timestamp'),
-          indexAvgDays: calcAvgDays(modelsInWindow, 'index_results_timestamp'),
-        });
-      }
-
-      // Move to next week
-      currentDate.setDate(currentDate.getDate() + 7);
-    }
-
-    return data;
-  }, [models]);
-
   // Compute days unsupported data for model family charts
   const daysUnsupportedData = useMemo(() => {
     if (models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
@@ -494,7 +411,7 @@ function App() {
 
     const familyData: Record<string, DaysUnsupportedDataPoint[]> = {};
     for (const [familyName, pattern] of Object.entries(MODEL_FAMILIES)) {
-      familyData[familyName] = computeFamilyChartData(models, pattern, sharedSampleDates);
+      familyData[familyName] = computeFamilyChartData(models, pattern, sharedSampleDates, useSmoothing);
     }
 
     const averageData = computeAverageChartData(familyData);
@@ -506,7 +423,7 @@ function App() {
       open: familyData.open,
       average: averageData,
     };
-  }, [models]);
+  }, [models, useSmoothing]);
 
   const SortIcon = ({ field }: { field: keyof ModelSupport }) => {
     if (sortField !== field) return <span className="text-gray-600 ml-1">↕</span>;
@@ -743,206 +660,46 @@ function App() {
           </div>
         </div>
 
-        {/* Charts Section */}
-        {chartData.length > 0 && (
-          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Support Percentage Chart */}
-            <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">
-                Support Percentage (60-day Rolling Average)
-              </h3>
-              <p className="text-sm text-[#9099ac] mb-4">
-                Percentage of models released in the past 60 days that have support
-              </p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      return `${date.getMonth() + 1}/${date.getDate()}`;
-                    }}
-                  />
-                  <YAxis
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    domain={[0, 100]}
-                    tickFormatter={(value) => `${value}%`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2228',
-                      border: '1px solid #3c3c4a',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value) => [`${value}%`, '']}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="litellmPercent"
-                    name="LiteLLM"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="evalProxyPercent"
-                    name="Eval Proxy"
-                    stroke="#ec4899"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="prodProxyPercent"
-                    name="Prod Proxy"
-                    stroke="#14b8a6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sdkPercent"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendPercent"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="indexPercent"
-                    name="Index"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Average Support Time Chart */}
-            <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">
-                Average Support Time (60-day Rolling Average)
-              </h3>
-              <p className="text-sm text-[#9099ac] mb-4">
-                Average days from model release to support for models released in the past 60 days
-              </p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      return `${date.getMonth() + 1}/${date.getDate()}`;
-                    }}
-                  />
-                  <YAxis
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => `${value}d`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2228',
-                      border: '1px solid #3c3c4a',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value) =>
-                      value !== null ? [`${value} days`, ''] : ['N/A', '']
-                    }
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="litellmAvgDays"
-                    name="LiteLLM"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="evalProxyAvgDays"
-                    name="Eval Proxy"
-                    stroke="#ec4899"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="prodProxyAvgDays"
-                    name="Prod Proxy"
-                    stroke="#14b8a6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sdkAvgDays"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendAvgDays"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="indexAvgDays"
-                    name="Index"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
         {/* Days Unsupported Charts Section */}
         {(daysUnsupportedData.claude.length > 0 ||
           daysUnsupportedData.gpt.length > 0 ||
           daysUnsupportedData.gemini.length > 0 ||
           daysUnsupportedData.open.length > 0) && (
           <>
-            <h2 className="text-xl font-bold text-white mt-12 mb-6">
-              Days Unsupported by Model Family
-            </h2>
+            <div className="mt-12 mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">
+                Days Unsupported by Model Family
+              </h2>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-[#9099ac]">Display:</span>
+                <div className="flex bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-1">
+                  <button
+                    onClick={() => setUseSmoothing(false)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      !useSmoothing
+                        ? 'bg-blue-600 text-white'
+                        : 'text-[#9099ac] hover:text-white'
+                    }`}
+                  >
+                    Raw Value
+                  </button>
+                  <button
+                    onClick={() => setUseSmoothing(true)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      useSmoothing
+                        ? 'bg-blue-600 text-white'
+                        : 'text-[#9099ac] hover:text-white'
+                    }`}
+                  >
+                    30-Day Average
+                  </button>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-[#9099ac] mb-6">
               Number of consecutive days where at least one model in the family has been unsupported.
               A value of 0 means all released models in the family are fully supported for that aspect.
+              {useSmoothing && ' (Showing 30-day rolling average)'}
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
               {/* Claude Chart */}
