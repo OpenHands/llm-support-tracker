@@ -437,6 +437,147 @@ def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]
     return None
 
 
+def extract_litellm_version_from_yaml(yaml_content: str) -> Optional[str]:
+    """
+    Extract the full litellm version tag from a litellm.yaml file content.
+
+    The version is in the image.tag field, e.g., "v1.81.9-stable.gemini.3.1-pro.sonnet-4.6"
+
+    Args:
+        yaml_content: The YAML file content
+
+    Returns:
+        The full litellm version tag string, or None if not found
+    """
+    import re
+
+    # Look for image tag pattern - extract the FULL tag, not just the version number
+    # Can be in format: tag: v1.81.9-stable or tag: "v1.81.9-stable.gemini.3.1-pro"
+    match = re.search(r'tag:\s*["\']?(v[\d.]+[^\s"\']*)', yaml_content)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def check_litellm_version_supports_model(version: str, model_id: str) -> bool:
+    """
+    Check if a specific litellm version supports a model.
+
+    Args:
+        version: Full litellm version tag (e.g., "v1.81.9-stable.gemini.3.1-pro.sonnet-4.6")
+        model_id: The model ID to check
+
+    Returns:
+        True if the version supports the model, False otherwise
+    """
+    headers = get_github_headers()
+    search_terms = get_model_search_terms(model_id)
+
+    # Fetch model_prices_and_context_window.json at this version tag
+    file_url = f"https://raw.githubusercontent.com/BerriAI/litellm/{version}/model_prices_and_context_window.json"
+
+    try:
+        response = requests.get(file_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            content = response.text.lower()
+            # Check if any search term appears in the file
+            for term in search_terms:
+                if term.lower() in content:
+                    return True
+    except requests.RequestException:
+        pass
+
+    return False
+
+
+def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
+    """
+    Search for when a model was first supported in the infra proxy deployment.
+
+    This works by:
+    1. Getting the commit history of the litellm.yaml file
+    2. For each commit (oldest to newest), extracting the deployed litellm version tag
+    3. Checking if that litellm version supports the model
+    4. Returning the date of the first deployment where the model is supported
+
+    Args:
+        model_id: The language model ID to search for
+        proxy_type: Either "eval_proxy" or "prod_proxy"
+
+    Returns:
+        ISO timestamp of when the model was first supported, or None if not found
+    """
+    headers = get_github_headers()
+    repo = REPOS["infra"]
+    path = SEARCH_PATHS[proxy_type][0]
+
+    # Get commit history for the litellm.yaml file
+    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
+    all_commits = []
+    page = 1
+    max_pages = 10
+
+    while page <= max_pages:
+        params = {"path": path, "per_page": 100, "page": page}
+        try:
+            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
+            if response.status_code != 200:
+                break
+            commits = response.json()
+            if not commits:
+                break
+            all_commits.extend(commits)
+            if len(commits) < 100:
+                break
+            page += 1
+        except requests.RequestException:
+            break
+
+    if not all_commits:
+        return None
+
+    # Track which versions we've already checked to avoid redundant API calls
+    checked_versions: dict[str, bool] = {}
+
+    # Go through commits from oldest to newest
+    for commit in reversed(all_commits):
+        commit_sha = commit.get("sha")
+        commit_date = commit.get("commit", {}).get("author", {}).get("date")
+
+        if not commit_sha or not commit_date:
+            continue
+
+        # Fetch litellm.yaml at this commit
+        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
+        try:
+            file_response = requests.get(file_url, headers=headers, timeout=30)
+            if file_response.status_code != 200:
+                continue
+
+            yaml_content = file_response.text
+            version = extract_litellm_version_from_yaml(yaml_content)
+
+            if not version:
+                continue
+
+            # Check if we've already verified this version
+            if version in checked_versions:
+                if checked_versions[version]:
+                    return commit_date
+                continue
+
+            # Check if this litellm version supports the model
+            supports_model = check_litellm_version_supports_model(version, model_id)
+            checked_versions[version] = supports_model
+
+            if supports_model:
+                return commit_date
+
+        except requests.RequestException:
+            continue
+
+    return None
 
 
 
@@ -637,12 +778,19 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     index_timestamp = search_index_results_folder(model_id)
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
-    # Proxy support timestamps
-    # The proxy uses wildcard routing (e.g., anthropic/*, openai/*), so it supports
-    # models as soon as litellm supports them. Both eval and prod proxy use the same
-    # litellm backend, so their support timestamps equal the litellm support timestamp.
-    result["eval_proxy_timestamp"] = result["litellm_support_timestamp"]
-    result["prod_proxy_timestamp"] = result["litellm_support_timestamp"]
+    # Search for eval proxy support by checking deployed litellm versions
+    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
+    eval_proxy_timestamp = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
+    # Default to litellm support if no specific proxy deployment found
+    result["eval_proxy_timestamp"] = eval_proxy_timestamp or result["litellm_support_timestamp"]
+
+    # Search for prod proxy support by checking deployed litellm versions
+    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
+    prod_proxy_timestamp = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
+    # Default to litellm support if no specific proxy deployment found
+    result["prod_proxy_timestamp"] = prod_proxy_timestamp or result["litellm_support_timestamp"]
 
     return result
 
