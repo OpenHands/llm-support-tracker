@@ -2,7 +2,7 @@
   {
     "model_id": "DeepSeek-V3.2-Reasoner",
     "release_date": "2025-12-01",
-    "sdk_support_timestamp": "2025-12-20T05:32:55.000-08:00",
+    "sdk_support_timestamp": "2026-01-02T02:51:02.000+05:30",
     "frontend_support_timestamp": "2025-12-01T00:00:00Z",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-12-01T00:00:00Z",
@@ -12,7 +12,7 @@
   {
     "model_id": "GLM-4.7",
     "release_date": "2025-10-01",
-    "sdk_support_timestamp": "2025-11-06T19:33:51.000+01:00",
+    "sdk_support_timestamp": "2025-10-01T00:00:00Z",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-10-01T00:00:00Z",
@@ -72,7 +72,7 @@
   {
     "model_id": "Kimi-K2-Thinking",
     "release_date": "2025-11-06",
-    "sdk_support_timestamp": "2025-11-11T03:11:40.000+07:00",
+    "sdk_support_timestamp": "2025-11-06T00:00:00Z",
     "frontend_support_timestamp": "2025-11-06T00:00:00Z",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-11-06T00:00:00Z",
@@ -92,7 +92,7 @@
   {
     "model_id": "MiniMax-M2.1",
     "release_date": "2025-09-01",
-    "sdk_support_timestamp": "2025-12-19T16:20:32.000-05:00",
+    "sdk_support_timestamp": "2025-11-07T22:27:42Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-11-07T22:27:42Z",
@@ -132,7 +132,7 @@
   {
     "model_id": "Qwen3-Coder-Next",
     "release_date": "2026-01-15",
-    "sdk_support_timestamp": "2026-01-15T00:00:00Z",
+    "sdk_support_timestamp": "2026-02-03T23:18:45.000-03:00",
     "frontend_support_timestamp": "2026-01-15T00:00:00Z",
     "index_results_timestamp": null,
     "eval_proxy_timestamp": "2026-01-15T00:00:00Z",
@@ -162,7 +162,7 @@
   {
     "model_id": "claude-sonnet-4-5",
     "release_date": "2025-09-29",
-    "sdk_support_timestamp": "2025-09-29T13:51:12.000-04:00",
+    "sdk_support_timestamp": "2025-09-29T00:00:00Z",
     "frontend_support_timestamp": "2025-09-29T00:00:00Z",
     "index_results_timestamp": "2026-02-10T10:52:36Z",
     "eval_proxy_timestamp": "2025-09-29T00:00:00Z",
