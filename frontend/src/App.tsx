@@ -21,6 +21,186 @@ interface ModelSupport {
   litellm_support_timestamp: string | null;
 }
 
+type Aspect = 'litellm' | 'eval_proxy' | 'prod_proxy' | 'sdk' | 'frontend' | 'index' | 'complete';
+
+const ASPECT_FIELDS: Record<Exclude<Aspect, 'complete'>, keyof ModelSupport> = {
+  litellm: 'litellm_support_timestamp',
+  eval_proxy: 'eval_proxy_timestamp',
+  prod_proxy: 'prod_proxy_timestamp',
+  sdk: 'sdk_support_timestamp',
+  frontend: 'frontend_support_timestamp',
+  index: 'index_results_timestamp',
+};
+
+const MODEL_FAMILIES: Record<string, RegExp> = {
+  claude: /claude/i,
+  gpt: /gpt/i,
+  gemini: /gemini/i,
+  open: /qwen|minimax|glm|kimi/i,
+};
+
+interface DaysUnsupportedDataPoint {
+  date: string;
+  litellm: number;
+  eval_proxy: number;
+  prod_proxy: number;
+  sdk: number;
+  frontend: number;
+  index: number;
+  complete: number;
+}
+
+export function isModelSupportedForAspect(
+  model: ModelSupport,
+  aspect: Aspect,
+  asOfDate: Date
+): boolean {
+  if (aspect === 'complete') {
+    return (Object.keys(ASPECT_FIELDS) as Exclude<Aspect, 'complete'>[]).every((a) =>
+      isModelSupportedForAspect(model, a, asOfDate)
+    );
+  }
+
+  const field = ASPECT_FIELDS[aspect];
+  const supportTimestamp = model[field] as string | null;
+  if (!supportTimestamp) return false;
+
+  const supportDate = new Date(supportTimestamp);
+  return supportDate <= asOfDate;
+}
+
+export function computeDaysUnsupported(
+  models: ModelSupport[],
+  modelPattern: RegExp,
+  aspect: Aspect
+): Array<{ date: string; daysUnsupported: number }> {
+  const matchingModels = models.filter((m) => modelPattern.test(m.model_id));
+  if (matchingModels.length === 0) return [];
+
+  const sortedByRelease = [...matchingModels].sort(
+    (a, b) => new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
+  );
+
+  const minDate = new Date(sortedByRelease[0].release_date);
+  const maxDate = new Date();
+
+  const result: Array<{ date: string; daysUnsupported: number }> = [];
+  let daysUnsupported = 0;
+
+  const currentDate = new Date(minDate);
+  while (currentDate <= maxDate) {
+    const releasedModels = matchingModels.filter((m) => {
+      const releaseDate = new Date(m.release_date);
+      return releaseDate <= currentDate;
+    });
+
+    if (releasedModels.length > 0) {
+      const anyUnsupported = releasedModels.some(
+        (m) => !isModelSupportedForAspect(m, aspect, currentDate)
+      );
+
+      if (anyUnsupported) {
+        daysUnsupported++;
+      } else {
+        daysUnsupported = 0;
+      }
+
+      result.push({
+        date: currentDate.toISOString().split('T')[0],
+        daysUnsupported,
+      });
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
+}
+
+export function computeFamilyChartData(
+  models: ModelSupport[],
+  modelPattern: RegExp
+): DaysUnsupportedDataPoint[] {
+  const aspects: Aspect[] = ['litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'];
+
+  const aspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
+  for (const aspect of aspects) {
+    const data = computeDaysUnsupported(models, modelPattern, aspect);
+    aspectData[aspect] = new Map(data.map((d) => [d.date, d.daysUnsupported]));
+  }
+
+  const allDates = new Set<string>();
+  for (const aspect of aspects) {
+    for (const date of aspectData[aspect].keys()) {
+      allDates.add(date);
+    }
+  }
+
+  const sortedDates = Array.from(allDates).sort();
+
+  // Sample weekly to reduce data points
+  const weeklyDates = sortedDates.filter((_, index) => index % 7 === 0 || index === sortedDates.length - 1);
+
+  return weeklyDates.map((date) => ({
+    date,
+    litellm: aspectData.litellm.get(date) ?? 0,
+    eval_proxy: aspectData.eval_proxy.get(date) ?? 0,
+    prod_proxy: aspectData.prod_proxy.get(date) ?? 0,
+    sdk: aspectData.sdk.get(date) ?? 0,
+    frontend: aspectData.frontend.get(date) ?? 0,
+    index: aspectData.index.get(date) ?? 0,
+    complete: aspectData.complete.get(date) ?? 0,
+  }));
+}
+
+interface AverageDataPoint {
+  date: string;
+  litellm: number;
+  eval_proxy: number;
+  prod_proxy: number;
+  sdk: number;
+  frontend: number;
+  index: number;
+  complete: number;
+}
+
+export function computeAverageChartData(
+  familyData: Record<string, DaysUnsupportedDataPoint[]>
+): AverageDataPoint[] {
+  const allDates = new Set<string>();
+  for (const family of Object.values(familyData)) {
+    for (const point of family) {
+      allDates.add(point.date);
+    }
+  }
+
+  const sortedDates = Array.from(allDates).sort();
+  const families = Object.keys(familyData);
+
+  return sortedDates.map((date) => {
+    const aspects: (keyof Omit<DaysUnsupportedDataPoint, 'date'>)[] = [
+      'litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'
+    ];
+
+    const result: AverageDataPoint = { date, litellm: 0, eval_proxy: 0, prod_proxy: 0, sdk: 0, frontend: 0, index: 0, complete: 0 };
+
+    for (const aspect of aspects) {
+      let sum = 0;
+      let count = 0;
+      for (const family of families) {
+        const point = familyData[family].find((p) => p.date === date);
+        if (point) {
+          sum += point[aspect];
+          count++;
+        }
+      }
+      result[aspect] = count > 0 ? Math.round(sum / count) : 0;
+    }
+
+    return result;
+  });
+}
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
   const date = new Date(dateStr);
@@ -188,6 +368,26 @@ function App() {
     }
 
     return data;
+  }, [models]);
+
+  // Compute days unsupported data for model family charts
+  const daysUnsupportedData = useMemo(() => {
+    if (models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
+
+    const familyData: Record<string, DaysUnsupportedDataPoint[]> = {};
+    for (const [familyName, pattern] of Object.entries(MODEL_FAMILIES)) {
+      familyData[familyName] = computeFamilyChartData(models, pattern);
+    }
+
+    const averageData = computeAverageChartData(familyData);
+
+    return {
+      claude: familyData.claude,
+      gpt: familyData.gpt,
+      gemini: familyData.gemini,
+      open: familyData.open,
+      average: averageData,
+    };
   }, [models]);
 
   const SortIcon = ({ field }: { field: keyof ModelSupport }) => {
@@ -611,6 +811,243 @@ function App() {
               </ResponsiveContainer>
             </div>
           </div>
+        )}
+
+        {/* Days Unsupported Charts Section */}
+        {(daysUnsupportedData.claude.length > 0 ||
+          daysUnsupportedData.gpt.length > 0 ||
+          daysUnsupportedData.gemini.length > 0 ||
+          daysUnsupportedData.open.length > 0) && (
+          <>
+            <h2 className="text-xl font-bold text-white mt-12 mb-6">
+              Days Unsupported by Model Family
+            </h2>
+            <p className="text-sm text-[#9099ac] mb-6">
+              Number of consecutive days where at least one model in the family has been unsupported.
+              A value of 0 means all released models in the family are fully supported for that aspect.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {/* Claude Chart */}
+              {daysUnsupportedData.claude.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Claude Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: claude</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.claude}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* GPT Chart */}
+              {daysUnsupportedData.gpt.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">GPT Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: gpt</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.gpt}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Gemini Chart */}
+              {daysUnsupportedData.gemini.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Gemini Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: gemini</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.gemini}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Open Models Chart */}
+              {daysUnsupportedData.open.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Open Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: qwen|minimax|glm|kimi</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.open}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Average Chart */}
+              {daysUnsupportedData.average.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6 lg:col-span-2 xl:col-span-1">
+                  <h3 className="text-lg font-semibold text-white mb-4">Average (All Families)</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Average across Claude, GPT, Gemini, and Open models</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.average}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         <footer className="mt-8 text-center text-[#9099ac] text-sm">
