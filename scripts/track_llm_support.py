@@ -71,6 +71,7 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "zai/glm-5",             # LiteLLM direct naming
         "zai/glm-5-code",        # Code variant
         "openrouter/z-ai/glm-5",
+        "glm",                   # Pattern used in SDK model_features.py to match all GLM models
     ],
     # OpenAI GPT models
     "GPT-5.2": [
@@ -375,7 +376,7 @@ def search_sdk_for_model(model_id: str) -> Optional[str]:
     Search for when a model was first added to the SDK.
     
     Uses git log -G (grep) to find the first commit that introduced the model name.
-    Searches only model_features.py where model lists are defined.
+    Searches model_features.py and resolve_model_config.py where models are defined.
     
     Args:
         model_id: The language model ID to search for
@@ -395,28 +396,32 @@ def search_sdk_for_model(model_id: str) -> Optional[str]:
         
         earliest_date = None
         
-        # Only search model_features.py where model lists are defined
-        search_path = "openhands-sdk/openhands/sdk/llm/utils/model_features.py"
+        # Search both model_features.py and resolve_model_config.py
+        search_paths = [
+            "openhands-sdk/openhands/sdk/llm/utils/model_features.py",
+            ".github/run-eval/resolve_model_config.py",
+        ]
         
-        for term in search_terms:
-            # Escape regex special chars but keep it as a literal search
-            escaped_term = re.escape(term)
-            
-            # Use git log -G (grep in diff) to find when term was added
-            result = subprocess.run(
-                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
-                cwd=temp_dir,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            
-            if result.returncode == 0 and result.stdout.strip():
-                dates = result.stdout.strip().split("\n")
-                if dates:
-                    commit_date = dates[0]  # First commit (oldest)
-                    if earliest_date is None or commit_date < earliest_date:
-                        earliest_date = commit_date
+        for search_path in search_paths:
+            for term in search_terms:
+                # Escape regex special chars but keep it as a literal search
+                escaped_term = re.escape(term)
+                
+                # Use git log -G (grep in diff) to find when term was added
+                result = subprocess.run(
+                    ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                    cwd=temp_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    dates = result.stdout.strip().split("\n")
+                    if dates:
+                        commit_date = dates[0]  # First commit (oldest)
+                        if earliest_date is None or commit_date < earliest_date:
+                            earliest_date = commit_date
         
         return earliest_date
         
@@ -921,6 +926,7 @@ def search_infra_proxy_for_model_name(model_id: str, proxy_type: str) -> Optiona
     Search for when a model name first appeared in the proxy config.
     
     This does a git log search for the model name in the litellm.yaml file.
+    Also checks for wildcard patterns that would match the model's aliases.
     
     Args:
         model_id: The language model ID to search for
@@ -946,8 +952,9 @@ def search_infra_proxy_for_model_name(model_id: str, proxy_type: str) -> Optiona
         if not temp_dir:
             return None
         
-        # Search for the model name (case-insensitive)
-        model_lower = model_id.lower()
+        # Get all model aliases
+        model_aliases = get_model_aliases(model_id)
+        model_aliases_lower = [alias.lower() for alias in model_aliases]
         
         # Get all commits that modified this file
         result = subprocess.run(
@@ -984,9 +991,29 @@ def search_infra_proxy_for_model_name(model_id: str, proxy_type: str) -> Optiona
                 continue
             
             content_lower = result.stdout.lower()
-            # Check for model_name entry with this model
-            if f'model_name: "{model_lower}"' in content_lower or f"model_name: '{model_lower}'" in content_lower:
-                first_appearance = commit_date
+            
+            # Check for exact model_name match
+            for model_lower in model_aliases_lower:
+                if f'model_name: "{model_lower}"' in content_lower or f"model_name: '{model_lower}'" in content_lower:
+                    first_appearance = commit_date
+                    break
+            
+            if first_appearance:
+                break
+            
+            # Check for wildcard patterns that would match this model
+            # e.g., "openrouter/*" matches "openrouter/z-ai/glm-5"
+            for alias_lower in model_aliases_lower:
+                if '/' in alias_lower:
+                    # Extract provider prefix (e.g., "openrouter" from "openrouter/z-ai/glm-5")
+                    provider = alias_lower.split('/')[0]
+                    wildcard_pattern = f"{provider}/*"
+                    
+                    if f'model_name: "{wildcard_pattern}"' in content_lower or f"model_name: '{wildcard_pattern}'" in content_lower:
+                        first_appearance = commit_date
+                        break
+            
+            if first_appearance:
                 break
         
         return first_appearance

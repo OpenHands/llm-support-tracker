@@ -635,5 +635,23 @@ class TestLitellmTimestampLogic:
         assert result is None
 
 
+class TestGLM5Support:
+    """Tests for GLM-5 specific support detection."""
+    
+    def test_glm5_has_glm_pattern_alias(self):
+        """GLM-5 should have 'glm' pattern in aliases for SDK detection."""
+        aliases = get_model_aliases("GLM-5")
+        assert "glm" in aliases, "GLM-5 should include 'glm' pattern for SDK model_features.py detection"
+    
+    def test_glm5_has_openrouter_alias(self):
+        """GLM-5 should have OpenRouter alias for proxy wildcard detection."""
+        aliases = get_model_aliases("GLM-5")
+        assert "openrouter/z-ai/glm-5" in aliases, "GLM-5 should have OpenRouter alias for wildcard detection"
+    
+    def test_glm5_is_tier_1(self):
+        """GLM-5 should be tier 1."""
+        assert get_model_tier("GLM-5") == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
