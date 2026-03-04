@@ -131,20 +131,20 @@ class TestGetModelTier:
         assert get_model_tier("GLM-4.7") == 1
         assert get_model_tier("GLM-5") == 1
 
-    def test_minimax_is_tier_1(self):
-        """MiniMax models should be tier 1."""
-        assert get_model_tier("MiniMax-M2.1") == 1
+    def test_minimax_m25_is_tier_1(self):
+        """MiniMax-M2.5 should be tier 1 (M2.1 was superseded before frontend support)."""
         assert get_model_tier("MiniMax-M2.5") == 1
+        assert get_model_tier("MiniMax-M2.1") == 2  # Superseded before frontend support
 
     def test_qwen3_coder_is_tier_1(self):
         """Qwen3-Coder-* models should be tier 1."""
         assert get_model_tier("Qwen3-Coder-480B") == 1
         assert get_model_tier("Qwen3-Coder-Next") == 1
 
-    def test_kimi_k2_is_tier_1(self):
-        """Kimi-K2* models should be tier 1."""
-        assert get_model_tier("Kimi-K2-Thinking") == 1
+    def test_kimi_k25_is_tier_1(self):
+        """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
         assert get_model_tier("Kimi-K2.5") == 1
+        assert get_model_tier("Kimi-K2-Thinking") == 2  # Superseded before frontend support
 
     def test_other_models_are_tier_2(self):
         """Non-priority models should be tier 2."""

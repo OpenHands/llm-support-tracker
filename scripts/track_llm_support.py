@@ -30,9 +30,9 @@ TIER_1_PATTERNS = [
     r"^Gemini-.*-Flash$",    # Gemini Flash
     r"^GPT-5",               # GPT-5*
     r"^GLM-",                # GLM
-    r"^MiniMax-",            # MiniMax
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
-    r"^Kimi-K2",             # Kimi-K2*
+    r"^MiniMax-M2\.5$",      # MiniMax-M2.5 only (M2.1 superseded before frontend support)
+    r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
 ]
 
 # Global model aliases map.
