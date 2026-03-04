@@ -30,10 +30,147 @@ TIER_1_PATTERNS = [
     r"^Gemini-.*-Flash$",    # Gemini Flash
     r"^GPT-5",               # GPT-5*
     r"^GLM-",                # GLM
-    r"^MiniMax-",            # MiniMax
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
-    r"^Kimi-K2",             # Kimi-K2*
+    r"^MiniMax-M2\.5$",      # MiniMax-M2.5 only (M2.1 superseded before frontend support)
+    r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
 ]
+
+# Global model aliases map.
+# Maps each canonical model ID (from openhands-index-results) to all known aliases
+# used across different systems (frontend, SDK, LiteLLM, proxy configs).
+# These are EXACT matches - no pattern matching or substring matching.
+MODEL_ALIASES: dict[str, list[str]] = {
+    # Anthropic Claude models
+    "claude-sonnet-4-5": [
+        "claude-sonnet-4-5-20250929",  # Frontend verified-models.ts
+    ],
+    "claude-sonnet-4-6": [
+        # NOT YET IN FRONTEND - no aliases
+    ],
+    "claude-opus-4-5": [
+        "claude-opus-4-5-20251101",  # Frontend verified-models.ts
+    ],
+    "claude-opus-4-6": [
+        "claude-opus-4-6",  # Frontend verified-models.ts (same name)
+    ],
+    # DeepSeek models
+    "DeepSeek-V3.2-Reasoner": [
+        "deepseek/deepseek-v3.2",  # LiteLLM naming
+        "deepseek-v3.2-reasoner",  # Lowercase variant
+    ],
+    # GLM models (Z-AI/Zhipu)
+    "GLM-4.7": [
+        "glm-4.7",
+        "zai/glm-4.7",           # LiteLLM direct naming
+        "zai.glm-4.7",           # LiteLLM dot notation
+        "glm-4-7-251222",        # LiteLLM versioned
+        "openrouter/z-ai/glm-4.7",
+    ],
+    "GLM-5": [
+        "glm-5",
+        "zai/glm-5",             # LiteLLM direct naming
+        "zai/glm-5-code",        # Code variant
+        "openrouter/z-ai/glm-5",
+    ],
+    # OpenAI GPT models
+    "GPT-5.2": [
+        "gpt-5.2",  # Frontend verified-models.ts
+    ],
+    "GPT-5.2-Codex": [
+        "gpt-5.2-codex",  # Frontend verified-models.ts
+    ],
+    # Google Gemini models
+    "Gemini-3-Pro": [
+        "gemini-3-pro-preview",  # Frontend verified-models.ts
+        "gemini-3-pro",
+    ],
+    "Gemini-3-Flash": [
+        "gemini-3-flash-preview",  # Frontend verified-models.ts
+        "gemini-3-flash",
+    ],
+    # Moonshot Kimi models
+    "Kimi-K2-Thinking": [
+        "kimi-k2-thinking",              # The actual model name
+        "kimi-k2-thinking-turbo",        # Turbo variant
+        "moonshot/kimi-k2-thinking",     # LiteLLM naming
+        "moonshot.kimi-k2-thinking",     # LiteLLM dot notation
+        "kimi-k2-thinking-251104",       # LiteLLM versioned
+    ],
+    "Kimi-K2.5": [
+        "kimi-k2.5",
+        "moonshot/kimi-k2.5",            # LiteLLM naming
+        "moonshotai.kimi-k2.5",          # LiteLLM dot notation
+        "openrouter/moonshotai/kimi-k2.5",
+    ],
+    # MiniMax models
+    "MiniMax-M2.1": [
+        "minimax-m2.1",
+        "minimax/MiniMax-M2.1",          # LiteLLM naming
+        "minimax.minimax-m2.1",          # LiteLLM dot notation
+        "openrouter/minimax/minimax-m2.1",
+    ],
+    "MiniMax-M2.5": [
+        "minimax-m2.5",                  # Frontend verified-models.ts
+        "minimax/MiniMax-M2.5",          # LiteLLM naming
+        "openrouter/minimax/minimax-m2.5",
+    ],
+    # NVIDIA Nemotron models
+    "Nemotron-3-Nano": [
+        "nemotron-3-nano",
+        "nvidia.nemotron-nano-3-30b",    # LiteLLM naming (30B variant)
+    ],
+    # Alibaba Qwen models
+    "Qwen3-Coder-480B": [
+        "qwen3-coder-480b",  # Frontend verified-models.ts
+    ],
+    "Qwen3-Coder-Next": [
+        "qwen3-coder-next",
+        "qwen.qwen3-coder-next",  # LiteLLM bedrock naming
+    ],
+}
+
+
+def get_model_aliases(model_id: str) -> list[str]:
+    """
+    Get all known aliases for a model ID.
+
+    Returns the model ID itself plus any aliases defined in MODEL_ALIASES.
+    Git searches are case-sensitive, so we include both original case and
+    lowercase versions when they differ.
+
+    Args:
+        model_id: The canonical model ID
+
+    Returns:
+        List of all known names for this model (including the model_id itself)
+    """
+    seen = set()  # Track exact strings to avoid duplicates
+    aliases = []
+
+    def add_alias(alias: str):
+        """Add an alias if not already present (exact match)."""
+        if alias not in seen:
+            seen.add(alias)
+            aliases.append(alias)
+
+    # Always include the model ID itself
+    add_alias(model_id)
+
+    # Add lowercase version if different (git search is case-sensitive)
+    if model_id.lower() != model_id:
+        add_alias(model_id.lower())
+
+    # Add any defined aliases (check both exact key and lowercase key)
+    model_lower = model_id.lower()
+    for key, value in MODEL_ALIASES.items():
+        if key == model_id or key.lower() == model_lower:
+            for alias in value:
+                add_alias(alias)
+                # Also add lowercase if different
+                if alias.lower() != alias:
+                    add_alias(alias.lower())
+
+    return aliases
 
 
 def get_model_tier(model_id: str) -> int:
@@ -87,72 +224,18 @@ def get_github_headers() -> dict:
 
 def get_model_search_terms(model_id: str) -> list[str]:
     """
-    Get a list of search terms for a model, including the full name and family names.
+    Get search terms for a model using the global MODEL_ALIASES map.
     
-    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "gemini-3-pro", "Gemini-3", ...]
+    This is a simple wrapper around get_model_aliases() for backward compatibility.
+    Only returns exact aliases - no pattern matching or substring expansion.
+    
+    Args:
+        model_id: The canonical model ID
+        
+    Returns:
+        List of all known names for this model
     """
-    import re
-    
-    # Model-specific aliases for frontend/SDK search (different naming conventions)
-    SEARCH_ALIASES = {
-        "kimi-k2-thinking": ["kimi-k2-0711-preview", "kimi-k2"],
-        "kimi-k2.5": ["kimi-k2.5", "kimi-k2-5"],
-        "deepseek-v3.2-reasoner": ["deepseek-reasoner", "deepseek-v3.2"],
-        "glm-4.7": ["glm-4", "glm4"],
-        "glm-5": ["glm-5", "glm5"],
-        "qwen3-coder-next": ["qwen3-coder-next", "qwen-3-coder-next"],
-    }
-    
-    terms = [model_id]
-    
-    # Always include lowercase version for case-insensitive matching
-    lowercase = model_id.lower()
-    if lowercase not in terms:
-        terms.append(lowercase)
-    
-    # Add model-specific aliases
-    if lowercase in SEARCH_ALIASES:
-        for alias in SEARCH_ALIASES[lowercase]:
-            if alias not in terms:
-                terms.append(alias)
-    
-    # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
-    suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
-    for suffix in suffixes:
-        if model_id.endswith(suffix):
-            base = model_id[:-len(suffix)]
-            if base not in terms:
-                terms.append(base)
-            # Also add lowercase version
-            if base.lower() not in terms:
-                terms.append(base.lower())
-    
-    # Also try with spaces instead of hyphens
-    spaced = model_id.replace("-", " ")
-    if spaced not in terms:
-        terms.append(spaced)
-    
-    # For versioned models like "claude-sonnet-4-5", also try "claude-sonnet-4"
-    version_match = re.match(r"(.+)-(\d+)-(\d+)$", model_id)
-    if version_match:
-        base_with_major = f"{version_match.group(1)}-{version_match.group(2)}"
-        if base_with_major not in terms:
-            terms.append(base_with_major)
-    
-    # For models like "Qwen3-Coder-480B", also try "qwen-3-coder" (lowercase with hyphen)
-    # Convert "Qwen3" to "qwen-3", "GPT5" to "gpt-5", etc.
-    normalized = re.sub(r'([a-zA-Z])(\d)', r'\1-\2', model_id).lower()
-    if normalized not in terms:
-        terms.append(normalized)
-    
-    # Also try just the model family name (e.g., "Qwen" from "Qwen3-Coder-480B")
-    family_match = re.match(r'^([A-Za-z]+)', model_id)
-    if family_match:
-        family = family_match.group(1)
-        if family not in terms and len(family) > 2:
-            terms.append(family)
-    
-    return terms
+    return get_model_aliases(model_id)
 
 
 def search_commits_for_model(
@@ -206,32 +289,16 @@ def get_litellm_model_search_terms(model_id: str) -> list[str]:
     """
     Get search terms for finding a model in litellm's model_prices_and_context_window.json.
     
+    This is a simple wrapper around get_model_aliases() for backward compatibility.
     Returns terms that should match as JSON keys in the model prices file.
+    
+    Args:
+        model_id: The canonical model ID
+        
+    Returns:
+        List of all known names for this model
     """
-    # Model-specific aliases only when litellm uses a different name
-    MODEL_ALIASES = {
-        # DeepSeek V3.2 Reasoner - use versioned name only
-        # Note: "deepseek-reasoner" is a separate unversioned model that predates V3.2
-        "deepseek-v3.2-reasoner": ["deepseek/deepseek-v3.2"],
-        # Gemini 3 Pro/Flash - litellm uses "preview" suffix
-        "gemini-3-pro": ["gemini-3-pro-preview"],
-        "gemini-3-flash": ["gemini-3-flash-preview"],
-        # GLM-5 - litellm uses zai/ prefix
-        "glm-5": ["zai/glm-5"],
-        # Nemotron 3 Nano - check for nvidia nemotron nano variants
-        "nemotron-3-nano": ["nvidia-nemotron-nano"],
-        # Qwen3 Coder models - litellm uses qwen. prefix on bedrock
-        "qwen3-coder-480b": ["qwen3-coder-480b"],
-        "qwen3-coder-next": ["qwen.qwen3-coder-next"],
-    }
-    
-    model_lower = model_id.lower()
-    
-    # Use alias if defined, otherwise use the model ID as-is
-    if model_lower in MODEL_ALIASES:
-        return MODEL_ALIASES[model_lower]
-    
-    return [model_lower]
+    return get_model_aliases(model_id)
 
 
 def check_model_in_litellm_json(content: str, model_id: str) -> bool:
@@ -675,17 +742,24 @@ def cleanup_index_results_cache():
         _index_results_cache["temp_dir"] = None
 
 
+# Required benchmarks for complete index results
+REQUIRED_BENCHMARKS = {"swe-bench", "gaia", "commit0", "swt-bench", "swe-bench-multimodal"}
+
+
 def search_index_results_for_model(model_id: str) -> Optional[str]:
     """
-    Search for when a model folder was added to openhands-index-results.
+    Search for when a model's results were completed in openhands-index-results.
     
-    Uses local git clone to find the first commit that added results for this model.
+    A model is considered complete only when all 5 required benchmarks are present:
+    swe-bench, gaia, commit0, swt-bench, swe-bench-multimodal.
+    
+    Uses local git clone to find when the results became complete.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of when the folder was created, or None if not found
+        ISO timestamp of when results were completed, or None if incomplete/not found
     """
     import subprocess
     
@@ -707,9 +781,24 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
         if not folder_name:
             return None
         
-        # Get the first commit that added this folder using git log
+        # Check if all required benchmarks are present
+        scores_path = os.path.join(results_dir, folder_name, "scores.json")
+        if not os.path.exists(scores_path):
+            return None
+        
+        with open(scores_path, "r") as f:
+            scores_data = json.load(f)
+        
+        present_benchmarks = {entry.get("benchmark") for entry in scores_data}
+        missing_benchmarks = REQUIRED_BENCHMARKS - present_benchmarks
+        
+        if missing_benchmarks:
+            print(f"Warning: {model_id} missing benchmarks: {missing_benchmarks}", file=sys.stderr)
+            return None
+        
+        # Get the most recent commit that modified scores.json (when results were completed)
         result = subprocess.run(
-            ["git", "log", "--format=%aI", "--reverse", "--diff-filter=A", "--", f"results/{folder_name}"],
+            ["git", "log", "--format=%aI", "-1", "--", f"results/{folder_name}/scores.json"],
             cwd=temp_dir,
             capture_output=True,
             text=True,
@@ -717,9 +806,7 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
         )
         
         if result.returncode == 0 and result.stdout.strip():
-            dates = result.stdout.strip().split("\n")
-            if dates:
-                return dates[0]  # First commit (oldest)
+            return result.stdout.strip()
         
         return None
         
@@ -1113,14 +1200,16 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
 
     # Search for frontend support using local git clone
+    # Note: No adjust_timestamp_to_release - frontend requires explicit model additions
     print(f"Searching for {model_id} in OpenHands frontend...")
     frontend_timestamp = search_frontend_for_model(model_id)
-    result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
+    result["frontend_support_timestamp"] = frontend_timestamp
 
     # Search for index results using local git clone
+    # Note: No adjust_timestamp_to_release - index requires explicit model additions
     print(f"Searching for {model_id} in openhands-index-results...")
     index_timestamp = search_index_results_for_model(model_id)
-    result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
+    result["index_results_timestamp"] = index_timestamp
 
     return result
 

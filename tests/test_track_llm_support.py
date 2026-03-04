@@ -14,6 +14,8 @@ from track_llm_support import (
     get_github_headers,
     get_litellm_model_search_terms,
     get_model_tier,
+    get_model_aliases,
+    MODEL_ALIASES,
     check_model_in_litellm_json,
     search_commits_for_model,
     search_sdk_for_model,
@@ -25,6 +27,54 @@ from track_llm_support import (
     find_litellm_versions_supporting_model,
     track_llm_support,
 )
+
+
+class TestModelAliases:
+    """Tests for MODEL_ALIASES and get_model_aliases function."""
+
+    def test_model_aliases_is_dict(self):
+        """MODEL_ALIASES should be a dictionary."""
+        assert isinstance(MODEL_ALIASES, dict)
+
+    def test_get_model_aliases_returns_list(self):
+        """get_model_aliases should always return a list."""
+        assert isinstance(get_model_aliases("test-model"), list)
+
+    def test_get_model_aliases_includes_model_id(self):
+        """get_model_aliases should always include the model ID itself."""
+        model_id = "test-model"
+        aliases = get_model_aliases(model_id)
+        assert model_id in aliases
+
+    def test_get_model_aliases_no_exact_duplicates(self):
+        """get_model_aliases should not return exact duplicates."""
+        for model_id in MODEL_ALIASES.keys():
+            aliases = get_model_aliases(model_id)
+            # Check no exact duplicates (case-sensitive is OK since git search is case-sensitive)
+            assert len(aliases) == len(set(aliases)), f"Exact duplicates found for {model_id}"
+
+    def test_claude_sonnet_4_6_no_frontend_alias(self):
+        """claude-sonnet-4-6 should not have frontend alias (not yet in frontend)."""
+        aliases = get_model_aliases("claude-sonnet-4-6")
+        # Should only have the model ID itself
+        assert aliases == ["claude-sonnet-4-6"]
+        # Should NOT contain claude-sonnet-4-5 related aliases
+        for alias in aliases:
+            assert "4-5" not in alias
+
+    def test_claude_sonnet_4_5_has_frontend_alias(self):
+        """claude-sonnet-4-5 should have frontend alias."""
+        aliases = get_model_aliases("claude-sonnet-4-5")
+        assert "claude-sonnet-4-5" in aliases
+        assert "claude-sonnet-4-5-20250929" in aliases
+
+    def test_gemini_has_preview_alias(self):
+        """Gemini models should have -preview suffix aliases."""
+        aliases = get_model_aliases("Gemini-3-Pro")
+        assert "gemini-3-pro-preview" in aliases
+
+        aliases = get_model_aliases("Gemini-3-Flash")
+        assert "gemini-3-flash-preview" in aliases
 
 
 class TestGetGithubHeaders:
@@ -81,20 +131,20 @@ class TestGetModelTier:
         assert get_model_tier("GLM-4.7") == 1
         assert get_model_tier("GLM-5") == 1
 
-    def test_minimax_is_tier_1(self):
-        """MiniMax models should be tier 1."""
-        assert get_model_tier("MiniMax-M2.1") == 1
+    def test_minimax_m25_is_tier_1(self):
+        """MiniMax-M2.5 should be tier 1 (M2.1 was superseded before frontend support)."""
         assert get_model_tier("MiniMax-M2.5") == 1
+        assert get_model_tier("MiniMax-M2.1") == 2  # Superseded before frontend support
 
     def test_qwen3_coder_is_tier_1(self):
         """Qwen3-Coder-* models should be tier 1."""
         assert get_model_tier("Qwen3-Coder-480B") == 1
         assert get_model_tier("Qwen3-Coder-Next") == 1
 
-    def test_kimi_k2_is_tier_1(self):
-        """Kimi-K2* models should be tier 1."""
-        assert get_model_tier("Kimi-K2-Thinking") == 1
+    def test_kimi_k25_is_tier_1(self):
+        """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
         assert get_model_tier("Kimi-K2.5") == 1
+        assert get_model_tier("Kimi-K2-Thinking") == 2  # Superseded before frontend support
 
     def test_other_models_are_tier_2(self):
         """Non-priority models should be tier 2."""
@@ -159,15 +209,27 @@ class TestSearchIndexResultsForModel:
 
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_success(self, mock_get_repo):
-        """Test successful index results folder search."""
+        """Test successful index results folder search with complete benchmarks."""
         import subprocess
         
         # Create a mock temp directory structure
         with tempfile.TemporaryDirectory() as temp_dir:
             results_dir = os.path.join(temp_dir, "results")
             os.makedirs(results_dir)
-            os.makedirs(os.path.join(results_dir, "test-model"))
+            model_dir = os.path.join(results_dir, "test-model")
+            os.makedirs(model_dir)
             os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            # Create scores.json with all required benchmarks
+            scores_data = [
+                {"benchmark": "swe-bench", "score": 50.0},
+                {"benchmark": "gaia", "score": 45.0},
+                {"benchmark": "commit0", "score": 30.0},
+                {"benchmark": "swt-bench", "score": 40.0},
+                {"benchmark": "swe-bench-multimodal", "score": 35.0},
+            ]
+            with open(os.path.join(model_dir, "scores.json"), "w") as f:
+                json.dump(scores_data, f)
             
             mock_get_repo.return_value = {"temp_dir": temp_dir}
             
@@ -175,11 +237,35 @@ class TestSearchIndexResultsForModel:
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0,
-                    stdout="2024-01-15T10:00:00Z\n2024-02-01T10:00:00Z\n"
+                    stdout="2024-01-15T10:00:00Z"
                 )
                 
                 result = search_index_results_for_model("test-model")
                 assert result == "2024-01-15T10:00:00Z"
+
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_incomplete_benchmarks(self, mock_get_repo):
+        """Test index results search returns None when benchmarks are incomplete."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            model_dir = os.path.join(results_dir, "test-model")
+            os.makedirs(model_dir)
+            
+            # Create scores.json with only 4 benchmarks (missing swe-bench-multimodal)
+            scores_data = [
+                {"benchmark": "swe-bench", "score": 50.0},
+                {"benchmark": "gaia", "score": 45.0},
+                {"benchmark": "commit0", "score": 30.0},
+                {"benchmark": "swt-bench", "score": 40.0},
+            ]
+            with open(os.path.join(model_dir, "scores.json"), "w") as f:
+                json.dump(scores_data, f)
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            result = search_index_results_for_model("test-model")
+            assert result is None
 
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_folder_not_found(self, mock_get_repo):
@@ -199,35 +285,46 @@ class TestGetLitellmModelSearchTerms:
     """Tests for get_litellm_model_search_terms function."""
 
     def test_basic_model_id(self):
-        """Test basic model ID returns lowercase version."""
+        """Test basic model ID returns the model ID itself."""
         terms = get_litellm_model_search_terms("test-model")
         assert terms == ["test-model"]
 
     def test_model_with_alias(self):
-        """Test model with defined alias returns alias."""
+        """Test model with defined alias returns all aliases."""
         terms = get_litellm_model_search_terms("DeepSeek-V3.2-Reasoner")
-        # Uses versioned name to avoid matching older unversioned deepseek-reasoner
-        assert terms == ["deepseek/deepseek-v3.2"]
+        # Should include the model ID and all defined aliases
+        assert "DeepSeek-V3.2-Reasoner" in terms
+        assert "deepseek/deepseek-v3.2" in terms
 
     def test_glm5_alias(self):
-        """Test GLM-5 returns correct litellm name."""
+        """Test GLM-5 returns model ID and aliases."""
         terms = get_litellm_model_search_terms("GLM-5")
-        assert terms == ["zai/glm-5"]
+        assert "GLM-5" in terms
+        assert "zai/glm-5" in terms
 
     def test_gemini_3_pro_alias(self):
-        """Test Gemini-3-Pro returns preview suffix."""
+        """Test Gemini-3-Pro returns model ID and preview suffix alias."""
         terms = get_litellm_model_search_terms("Gemini-3-Pro")
-        assert terms == ["gemini-3-pro-preview"]
+        assert "Gemini-3-Pro" in terms
+        assert "gemini-3-pro-preview" in terms
 
     def test_gemini_3_flash_alias(self):
-        """Test Gemini-3-Flash returns preview suffix."""
+        """Test Gemini-3-Flash returns model ID and preview suffix alias."""
         terms = get_litellm_model_search_terms("Gemini-3-Flash")
-        assert terms == ["gemini-3-flash-preview"]
+        assert "Gemini-3-Flash" in terms
+        assert "gemini-3-flash-preview" in terms
 
     def test_model_without_alias(self):
-        """Test model without alias returns lowercase original."""
+        """Test model without alias returns just the model ID."""
+        # claude-sonnet-4-6 has no aliases defined
+        terms = get_litellm_model_search_terms("claude-sonnet-4-6")
+        assert terms == ["claude-sonnet-4-6"]
+
+    def test_model_with_frontend_alias(self):
+        """Test model with frontend alias includes it."""
         terms = get_litellm_model_search_terms("claude-sonnet-4-5")
-        assert terms == ["claude-sonnet-4-5"]
+        assert "claude-sonnet-4-5" in terms
+        assert "claude-sonnet-4-5-20250929" in terms
 
 
 class TestCheckModelInLitellmJson:
