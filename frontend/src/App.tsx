@@ -13,6 +13,7 @@ import {
 interface ModelSupport {
   model_id: string;
   release_date: string;
+  tier: number;
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
   index_results_timestamp: string | null;
@@ -63,6 +64,7 @@ function App() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showTier2, setShowTier2] = useState(false);
 
   useEffect(() => {
     fetch('/all_models.json')
@@ -80,7 +82,9 @@ function App() {
       });
   }, []);
 
-  const sortedModels = [...models].sort((a, b) => {
+  // Filter models by tier, then sort
+  const filteredModels = showTier2 ? models : models.filter((m) => m.tier === 1);
+  const sortedModels = [...filteredModels].sort((a, b) => {
     const aVal = a[sortField];
     const bVal = b[sortField];
     if (aVal === null && bVal === null) return 0;
@@ -100,12 +104,14 @@ function App() {
     }
   };
 
-  // Compute rolling average data for charts
+  // Compute rolling average data for charts (tier 1 models only)
   const chartData = useMemo(() => {
-    if (models.length === 0) return [];
+    // Filter to tier 1 models only for metrics
+    const tier1Models = models.filter((m) => m.tier === 1);
+    if (tier1Models.length === 0) return [];
 
     // Sort models by release date
-    const sortedByRelease = [...models].sort(
+    const sortedByRelease = [...tier1Models].sort(
       (a, b) => new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
     );
 
@@ -229,6 +235,20 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#3c3c4a] flex items-center justify-between">
+            <span className="text-sm text-[#9099ac]">
+              Showing {sortedModels.length} of {models.length} models
+            </span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showTier2}
+                onChange={(e) => setShowTier2(e.target.checked)}
+                className="w-4 h-4 rounded border-[#3c3c4a] bg-[#24272e] text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <span className="text-sm text-[#9099ac]">Show tier 2 models</span>
+            </label>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
