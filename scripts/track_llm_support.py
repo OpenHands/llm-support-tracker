@@ -89,11 +89,32 @@ def get_model_search_terms(model_id: str) -> list[str]:
     """
     Get a list of search terms for a model, including the full name and family names.
     
-    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3"]
+    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "gemini-3-pro", "Gemini-3", ...]
     """
     import re
     
+    # Model-specific aliases for frontend/SDK search (different naming conventions)
+    SEARCH_ALIASES = {
+        "kimi-k2-thinking": ["kimi-k2-0711-preview", "kimi-k2"],
+        "kimi-k2.5": ["kimi-k2.5", "kimi-k2-5"],
+        "deepseek-v3.2-reasoner": ["deepseek-reasoner", "deepseek-v3.2"],
+        "glm-4.7": ["glm-4", "glm4"],
+        "glm-5": ["glm-5", "glm5"],
+        "qwen3-coder-next": ["qwen3-coder-next", "qwen-3-coder-next"],
+    }
+    
     terms = [model_id]
+    
+    # Always include lowercase version for case-insensitive matching
+    lowercase = model_id.lower()
+    if lowercase not in terms:
+        terms.append(lowercase)
+    
+    # Add model-specific aliases
+    if lowercase in SEARCH_ALIASES:
+        for alias in SEARCH_ALIASES[lowercase]:
+            if alias not in terms:
+                terms.append(alias)
     
     # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
     suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
@@ -102,6 +123,9 @@ def get_model_search_terms(model_id: str) -> list[str]:
             base = model_id[:-len(suffix)]
             if base not in terms:
                 terms.append(base)
+            # Also add lowercase version
+            if base.lower() not in terms:
+                terms.append(base.lower())
     
     # Also try with spaces instead of hyphens
     spaced = model_id.replace("-", " ")
