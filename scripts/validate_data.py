@@ -3,7 +3,8 @@
 Validate the LLM support data for logical consistency.
 
 Rules:
-- Required fields: model_id, release_date
+- Required fields: model_id, release_date, tier
+- tier must be 1 or 2
 - Timestamps should be valid ISO format
 - Proxy support must not be before litellm support (proxy deploys litellm versions)
 """

@@ -2,6 +2,7 @@
   {
     "model_id": "DeepSeek-V3.2-Reasoner",
     "release_date": "2025-12-01",
+    "tier": 2,
     "sdk_support_timestamp": "2025-12-01T00:00:00Z",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -12,6 +13,7 @@
   {
     "model_id": "GLM-4.7",
     "release_date": "2025-10-01",
+    "tier": 1,
     "sdk_support_timestamp": "2025-11-03T15:26:02+01:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -22,6 +24,7 @@
   {
     "model_id": "GLM-5",
     "release_date": "2026-02-01",
+    "tier": 1,
     "sdk_support_timestamp": "2026-02-01T00:00:00Z",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-03-02T09:02:54-06:00",
@@ -32,6 +35,7 @@
   {
     "model_id": "GPT-5.2",
     "release_date": "2025-12-11",
+    "tier": 1,
     "sdk_support_timestamp": "2025-12-11T00:00:00Z",
     "frontend_support_timestamp": "2026-01-30T09:15:47-08:00",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -42,6 +46,7 @@
   {
     "model_id": "GPT-5.2-Codex",
     "release_date": "2025-12-18",
+    "tier": 1,
     "sdk_support_timestamp": "2025-12-18T00:00:00Z",
     "frontend_support_timestamp": "2026-01-30T09:15:47-08:00",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -52,6 +57,7 @@
   {
     "model_id": "Gemini-3-Flash",
     "release_date": "2025-12-17",
+    "tier": 1,
     "sdk_support_timestamp": "2025-12-17T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -62,6 +68,7 @@
   {
     "model_id": "Gemini-3-Pro",
     "release_date": "2025-11-18",
+    "tier": 1,
     "sdk_support_timestamp": "2025-11-18T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -72,6 +79,7 @@
   {
     "model_id": "Kimi-K2-Thinking",
     "release_date": "2025-11-06",
+    "tier": 1,
     "sdk_support_timestamp": "2025-11-06T00:00:00Z",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -82,6 +90,7 @@
   {
     "model_id": "Kimi-K2.5",
     "release_date": "2026-01-27",
+    "tier": 1,
     "sdk_support_timestamp": "2026-01-27T00:00:00Z",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -92,6 +101,7 @@
   {
     "model_id": "MiniMax-M2.1",
     "release_date": "2025-09-01",
+    "tier": 1,
     "sdk_support_timestamp": "2025-12-19T16:20:32-05:00",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -102,6 +112,7 @@
   {
     "model_id": "MiniMax-M2.5",
     "release_date": "2026-02-01",
+    "tier": 1,
     "sdk_support_timestamp": "2026-02-01T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-12T01:50:30Z",
@@ -112,6 +123,7 @@
   {
     "model_id": "Nemotron-3-Nano",
     "release_date": "2025-10-01",
+    "tier": 2,
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -122,6 +134,7 @@
   {
     "model_id": "Qwen3-Coder-480B",
     "release_date": "2025-12-01",
+    "tier": 1,
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -132,6 +145,7 @@
   {
     "model_id": "Qwen3-Coder-Next",
     "release_date": "2026-01-15",
+    "tier": 1,
     "sdk_support_timestamp": "2026-02-16T17:05:53-08:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-24T17:02:45-06:00",
@@ -142,6 +156,7 @@
   {
     "model_id": "claude-opus-4-5",
     "release_date": "2025-11-24",
+    "tier": 1,
     "sdk_support_timestamp": "2025-11-24T00:00:00Z",
     "frontend_support_timestamp": "2025-11-24T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -152,6 +167,7 @@
   {
     "model_id": "claude-opus-4-6",
     "release_date": "2026-02-05",
+    "tier": 1,
     "sdk_support_timestamp": "2026-02-05T00:00:00Z",
     "frontend_support_timestamp": "2026-02-05T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -162,6 +178,7 @@
   {
     "model_id": "claude-sonnet-4-5",
     "release_date": "2025-09-29",
+    "tier": 1,
     "sdk_support_timestamp": "2025-10-17T12:16:16-04:00",
     "frontend_support_timestamp": "2025-09-29T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -172,6 +189,7 @@
   {
     "model_id": "claude-sonnet-4-6",
     "release_date": "2026-02-20",
+    "tier": 1,
     "sdk_support_timestamp": "2026-02-20T00:00:00Z",
     "frontend_support_timestamp": "2026-02-20T00:00:00Z",
     "index_results_timestamp": "2026-03-02T09:03:53-06:00",
