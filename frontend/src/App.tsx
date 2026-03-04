@@ -699,7 +699,6 @@ function App() {
             <p className="text-sm text-[#9099ac] mb-6">
               Number of consecutive days where at least one model in the family has been unsupported.
               A value of 0 means all released models in the family are fully supported for that aspect.
-              {useSmoothing && ' (Showing 30-day rolling average)'}
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
               {/* Claude Chart */}
