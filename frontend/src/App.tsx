@@ -21,6 +21,304 @@ interface ModelSupport {
   litellm_support_timestamp: string | null;
 }
 
+type Aspect = 'litellm' | 'eval_proxy' | 'prod_proxy' | 'sdk' | 'frontend' | 'index' | 'complete';
+
+const ASPECT_FIELDS: Record<Exclude<Aspect, 'complete'>, keyof ModelSupport> = {
+  litellm: 'litellm_support_timestamp',
+  eval_proxy: 'eval_proxy_timestamp',
+  prod_proxy: 'prod_proxy_timestamp',
+  sdk: 'sdk_support_timestamp',
+  frontend: 'frontend_support_timestamp',
+  index: 'index_results_timestamp',
+};
+
+const MODEL_FAMILIES: Record<string, RegExp> = {
+  claude: /claude/i,
+  gpt: /gpt/i,
+  gemini: /gemini/i,
+  open: /qwen|minimax|glm|kimi/i,
+};
+
+interface DaysUnsupportedDataPoint {
+  date: string;
+  litellm: number;
+  eval_proxy: number;
+  prod_proxy: number;
+  sdk: number;
+  frontend: number;
+  index: number;
+  complete: number;
+}
+
+export function isModelSupportedForAspect(
+  model: ModelSupport,
+  aspect: Aspect,
+  asOfDate: Date
+): boolean {
+  if (aspect === 'complete') {
+    return (Object.keys(ASPECT_FIELDS) as Exclude<Aspect, 'complete'>[]).every((a) =>
+      isModelSupportedForAspect(model, a, asOfDate)
+    );
+  }
+
+  const field = ASPECT_FIELDS[aspect];
+  const supportTimestamp = model[field] as string | null;
+  if (!supportTimestamp) return false;
+
+  const supportDate = new Date(supportTimestamp);
+  return supportDate <= asOfDate;
+}
+
+export function computeDaysUnsupported(
+  models: ModelSupport[],
+  modelPattern: RegExp,
+  aspect: Aspect
+): Array<{ date: string; daysUnsupported: number }> {
+  const matchingModels = models.filter((m) => modelPattern.test(m.model_id));
+  if (matchingModels.length === 0) return [];
+
+  const sortedByRelease = [...matchingModels].sort(
+    (a, b) => new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
+  );
+
+  const minDate = new Date(sortedByRelease[0].release_date);
+  const maxDate = new Date();
+
+  const result: Array<{ date: string; daysUnsupported: number }> = [];
+  let daysUnsupported = 0;
+
+  const currentDate = new Date(minDate);
+  while (currentDate <= maxDate) {
+    const releasedModels = matchingModels.filter((m) => {
+      const releaseDate = new Date(m.release_date);
+      return releaseDate <= currentDate;
+    });
+
+    if (releasedModels.length > 0) {
+      const anyUnsupported = releasedModels.some(
+        (m) => !isModelSupportedForAspect(m, aspect, currentDate)
+      );
+
+      if (anyUnsupported) {
+        daysUnsupported++;
+      } else {
+        daysUnsupported = 0;
+      }
+
+      result.push({
+        date: currentDate.toISOString().split('T')[0],
+        daysUnsupported,
+      });
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
+}
+
+export function applyRollingAverage(
+  data: Map<string, number>,
+  sortedDates: string[],
+  windowDays: number = 30
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  for (let i = 0; i < sortedDates.length; i++) {
+    const currentDate = new Date(sortedDates[i]);
+    let sum = 0;
+    let count = 0;
+
+    // Look back windowDays days
+    for (let j = i; j >= 0; j--) {
+      const pastDate = new Date(sortedDates[j]);
+      const diffDays = (currentDate.getTime() - pastDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays > windowDays) break;
+
+      const value = data.get(sortedDates[j]);
+      if (value !== undefined) {
+        sum += value;
+        count++;
+      }
+    }
+
+    result.set(sortedDates[i], count > 0 ? Math.round(sum / count) : 0);
+  }
+
+  return result;
+}
+
+// Generate consistent weekly sample dates (every Sunday) within a date range
+export function getWeeklySampleDates(startDate: string, endDate: string): string[] {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const result: string[] = [];
+
+  // Find the first Sunday on or after start
+  const current = new Date(start);
+  const dayOfWeek = current.getDay();
+  if (dayOfWeek !== 0) {
+    current.setDate(current.getDate() + (7 - dayOfWeek));
+  }
+
+  while (current <= end) {
+    result.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 7);
+  }
+
+  // Always include the end date if it's not already included
+  const endStr = end.toISOString().split('T')[0];
+  if (result.length === 0 || result[result.length - 1] !== endStr) {
+    result.push(endStr);
+  }
+
+  return result;
+}
+
+export function computeFamilyChartData(
+  models: ModelSupport[],
+  modelPattern: RegExp,
+  sampleDates?: string[],
+  useSmoothing: boolean = true
+): DaysUnsupportedDataPoint[] {
+  const aspects: Aspect[] = ['litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'];
+
+  const rawAspectData: Record<Aspect, Map<string, number>> = {} as Record<Aspect, Map<string, number>>;
+  for (const aspect of aspects) {
+    const data = computeDaysUnsupported(models, modelPattern, aspect);
+    rawAspectData[aspect] = new Map(data.map((d) => [d.date, d.daysUnsupported]));
+  }
+
+  const allDates = new Set<string>();
+  for (const aspect of aspects) {
+    for (const date of rawAspectData[aspect].keys()) {
+      allDates.add(date);
+    }
+  }
+
+  const sortedDates = Array.from(allDates).sort();
+  if (sortedDates.length === 0) return [];
+
+  // Apply 30-day rolling average to smooth the data (if enabled)
+  const aspectDataToUse: Record<Aspect, Map<string, number>> = useSmoothing
+    ? {} as Record<Aspect, Map<string, number>>
+    : rawAspectData;
+  
+  if (useSmoothing) {
+    for (const aspect of aspects) {
+      aspectDataToUse[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 30);
+    }
+  }
+
+  // Use provided sample dates or generate weekly dates
+  const weeklyDates = sampleDates ?? getWeeklySampleDates(sortedDates[0], sortedDates[sortedDates.length - 1]);
+
+  // Filter to dates that exist in our data range
+  const validDates = weeklyDates.filter((date) => date >= sortedDates[0] && date <= sortedDates[sortedDates.length - 1]);
+
+  return validDates.map((date) => {
+    // For dates that don't have exact data, find the closest previous date
+    const getValueForDate = (aspectData: Map<string, number>, targetDate: string): number => {
+      if (aspectData.has(targetDate)) {
+        return aspectData.get(targetDate)!;
+      }
+      // Find closest previous date
+      for (let i = sortedDates.length - 1; i >= 0; i--) {
+        if (sortedDates[i] <= targetDate && aspectData.has(sortedDates[i])) {
+          return aspectData.get(sortedDates[i])!;
+        }
+      }
+      return 0;
+    };
+
+    return {
+      date,
+      litellm: getValueForDate(aspectDataToUse.litellm, date),
+      eval_proxy: getValueForDate(aspectDataToUse.eval_proxy, date),
+      prod_proxy: getValueForDate(aspectDataToUse.prod_proxy, date),
+      sdk: getValueForDate(aspectDataToUse.sdk, date),
+      frontend: getValueForDate(aspectDataToUse.frontend, date),
+      index: getValueForDate(aspectDataToUse.index, date),
+      complete: getValueForDate(aspectDataToUse.complete, date),
+    };
+  });
+}
+
+interface AverageDataPoint {
+  date: string;
+  litellm: number;
+  eval_proxy: number;
+  prod_proxy: number;
+  sdk: number;
+  frontend: number;
+  index: number;
+  complete: number;
+}
+
+export function computeAverageChartData(
+  familyData: Record<string, DaysUnsupportedDataPoint[]>
+): AverageDataPoint[] {
+  const families = Object.keys(familyData);
+  if (families.length === 0) return [];
+
+  // All families should now share the same dates since we use consistent sampling
+  // Build a map from date -> family -> data for quick lookups
+  const familyMaps: Record<string, Map<string, DaysUnsupportedDataPoint>> = {};
+  for (const family of families) {
+    familyMaps[family] = new Map(familyData[family].map((p) => [p.date, p]));
+  }
+
+  // Find the date range where ALL families have data
+  const familyDateRanges = families.map((family) => {
+    const dates = familyData[family].map((p) => p.date).sort();
+    return { start: dates[0], end: dates[dates.length - 1] };
+  });
+
+  const latestStart = familyDateRanges.reduce(
+    (max, range) => (range.start > max ? range.start : max),
+    familyDateRanges[0].start
+  );
+  const earliestEnd = familyDateRanges.reduce(
+    (min, range) => (range.end < min ? range.end : min),
+    familyDateRanges[0].end
+  );
+
+  // Get all unique dates within the common range
+  const allDates = new Set<string>();
+  for (const family of families) {
+    for (const point of familyData[family]) {
+      if (point.date >= latestStart && point.date <= earliestEnd) {
+        allDates.add(point.date);
+      }
+    }
+  }
+
+  const sortedDates = Array.from(allDates).sort();
+
+  return sortedDates.map((date) => {
+    const aspects: (keyof Omit<DaysUnsupportedDataPoint, 'date'>)[] = [
+      'litellm', 'eval_proxy', 'prod_proxy', 'sdk', 'frontend', 'index', 'complete'
+    ];
+
+    const result: AverageDataPoint = { date, litellm: 0, eval_proxy: 0, prod_proxy: 0, sdk: 0, frontend: 0, index: 0, complete: 0 };
+
+    for (const aspect of aspects) {
+      let sum = 0;
+      let count = 0;
+      for (const family of families) {
+        const point = familyMaps[family].get(date);
+        if (point) {
+          sum += point[aspect];
+          count++;
+        }
+      }
+      result[aspect] = count > 0 ? Math.round(sum / count) : 0;
+    }
+
+    return result;
+  });
+}
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
   const date = new Date(dateStr);
@@ -63,6 +361,7 @@ function App() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [useSmoothing, setUseSmoothing] = useState(true);
 
   useEffect(() => {
     fetch('/all_models.json')
@@ -100,95 +399,31 @@ function App() {
     }
   };
 
-  // Compute rolling average data for charts
-  const chartData = useMemo(() => {
-    if (models.length === 0) return [];
+  // Compute days unsupported data for model family charts
+  const daysUnsupportedData = useMemo(() => {
+    if (models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
 
-    // Sort models by release date
-    const sortedByRelease = [...models].sort(
-      (a, b) => new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
-    );
+    // First, determine the global date range across all families for consistent sampling
+    const allReleaseDates = models.map((m) => m.release_date).sort();
+    const globalStart = allReleaseDates[0];
+    const globalEnd = new Date().toISOString().split('T')[0];
+    const sharedSampleDates = getWeeklySampleDates(globalStart, globalEnd);
 
-    // Get date range
-    const minDate = new Date(sortedByRelease[0].release_date);
-    const maxDate = new Date();
-    
-    const data: Array<{
-      date: string;
-      sdkPercent: number;
-      frontendPercent: number;
-      litellmPercent: number;
-      evalProxyPercent: number;
-      prodProxyPercent: number;
-      indexPercent: number;
-      sdkAvgDays: number | null;
-      frontendAvgDays: number | null;
-      litellmAvgDays: number | null;
-      evalProxyAvgDays: number | null;
-      prodProxyAvgDays: number | null;
-      indexAvgDays: number | null;
-    }> = [];
-
-    // Generate data points for each month
-    const currentDate = new Date(minDate);
-    while (currentDate <= maxDate) {
-      const windowEnd = new Date(currentDate);
-      const windowStart = new Date(currentDate);
-      windowStart.setDate(windowStart.getDate() - 60);
-
-      // Get models released within the 60-day window before this date
-      const modelsInWindow = sortedByRelease.filter((m) => {
-        const releaseDate = new Date(m.release_date);
-        return releaseDate >= windowStart && releaseDate <= windowEnd;
-      });
-
-      if (modelsInWindow.length > 0) {
-        // Calculate support percentages
-        const sdkSupported = modelsInWindow.filter((m) => m.sdk_support_timestamp).length;
-        const frontendSupported = modelsInWindow.filter((m) => m.frontend_support_timestamp).length;
-        const litellmSupported = modelsInWindow.filter((m) => m.litellm_support_timestamp).length;
-        const evalProxySupported = modelsInWindow.filter((m) => m.eval_proxy_timestamp).length;
-        const prodProxySupported = modelsInWindow.filter((m) => m.prod_proxy_timestamp).length;
-        const indexSupported = modelsInWindow.filter((m) => m.index_results_timestamp).length;
-
-        // Calculate average support time (days from release to support)
-        const calcAvgDays = (
-          models: ModelSupport[],
-          timestampField: keyof ModelSupport
-        ): number | null => {
-          const supported = models.filter((m) => m[timestampField]);
-          if (supported.length === 0) return null;
-          const totalDays = supported.reduce((sum, m) => {
-            const releaseDate = new Date(m.release_date);
-            const supportDate = new Date(m[timestampField] as string);
-            return sum + Math.max(0, (supportDate.getTime() - releaseDate.getTime()) / (1000 * 60 * 60 * 24));
-          }, 0);
-          return Math.round(totalDays / supported.length);
-        };
-
-        data.push({
-          date: currentDate.toISOString().split('T')[0],
-          sdkPercent: Math.round((sdkSupported / modelsInWindow.length) * 100),
-          frontendPercent: Math.round((frontendSupported / modelsInWindow.length) * 100),
-          litellmPercent: Math.round((litellmSupported / modelsInWindow.length) * 100),
-          evalProxyPercent: Math.round((evalProxySupported / modelsInWindow.length) * 100),
-          prodProxyPercent: Math.round((prodProxySupported / modelsInWindow.length) * 100),
-          indexPercent: Math.round((indexSupported / modelsInWindow.length) * 100),
-          sdkAvgDays: calcAvgDays(modelsInWindow, 'sdk_support_timestamp'),
-          frontendAvgDays: calcAvgDays(modelsInWindow, 'frontend_support_timestamp'),
-          litellmAvgDays: calcAvgDays(modelsInWindow, 'litellm_support_timestamp'),
-          evalProxyAvgDays: calcAvgDays(modelsInWindow, 'eval_proxy_timestamp'),
-          prodProxyAvgDays: calcAvgDays(modelsInWindow, 'prod_proxy_timestamp'),
-          indexAvgDays: calcAvgDays(modelsInWindow, 'index_results_timestamp'),
-        });
-      }
-
-      // Move to next week
-      currentDate.setDate(currentDate.getDate() + 7);
+    const familyData: Record<string, DaysUnsupportedDataPoint[]> = {};
+    for (const [familyName, pattern] of Object.entries(MODEL_FAMILIES)) {
+      familyData[familyName] = computeFamilyChartData(models, pattern, sharedSampleDates, useSmoothing);
     }
 
-    return data;
-  }, [models]);
+    const averageData = computeAverageChartData(familyData);
+
+    return {
+      claude: familyData.claude,
+      gpt: familyData.gpt,
+      gemini: familyData.gemini,
+      open: familyData.open,
+      average: averageData,
+    };
+  }, [models, useSmoothing]);
 
   const SortIcon = ({ field }: { field: keyof ModelSupport }) => {
     if (sortField !== field) return <span className="text-gray-600 ml-1">↕</span>;
@@ -425,192 +660,268 @@ function App() {
           </div>
         </div>
 
-        {/* Charts Section */}
-        {chartData.length > 0 && (
-          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Support Percentage Chart */}
-            <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">
-                Support Percentage (60-day Rolling Average)
-              </h3>
-              <p className="text-sm text-[#9099ac] mb-4">
-                Percentage of models released in the past 60 days that have support
-              </p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      return `${date.getMonth() + 1}/${date.getDate()}`;
-                    }}
-                  />
-                  <YAxis
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    domain={[0, 100]}
-                    tickFormatter={(value) => `${value}%`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2228',
-                      border: '1px solid #3c3c4a',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value) => [`${value}%`, '']}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="litellmPercent"
-                    name="LiteLLM"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="evalProxyPercent"
-                    name="Eval Proxy"
-                    stroke="#ec4899"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="prodProxyPercent"
-                    name="Prod Proxy"
-                    stroke="#14b8a6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sdkPercent"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendPercent"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="indexPercent"
-                    name="Index"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+        {/* Days Unsupported Charts Section */}
+        {(daysUnsupportedData.claude.length > 0 ||
+          daysUnsupportedData.gpt.length > 0 ||
+          daysUnsupportedData.gemini.length > 0 ||
+          daysUnsupportedData.open.length > 0) && (
+          <>
+            <div className="mt-12 mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">
+                Days Unsupported by Model Family
+              </h2>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-[#9099ac]">Display:</span>
+                <div className="flex bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-1">
+                  <button
+                    onClick={() => setUseSmoothing(false)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      !useSmoothing
+                        ? 'bg-blue-600 text-white'
+                        : 'text-[#9099ac] hover:text-white'
+                    }`}
+                  >
+                    Raw Value
+                  </button>
+                  <button
+                    onClick={() => setUseSmoothing(true)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      useSmoothing
+                        ? 'bg-blue-600 text-white'
+                        : 'text-[#9099ac] hover:text-white'
+                    }`}
+                  >
+                    30-Day Average
+                  </button>
+                </div>
+              </div>
             </div>
+            <p className="text-sm text-[#9099ac] mb-6">
+              Number of consecutive days where at least one model in the family has been unsupported.
+              A value of 0 means all released models in the family are fully supported for that aspect.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {/* Claude Chart */}
+              {daysUnsupportedData.claude.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Claude Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: claude</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.claude}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
 
-            {/* Average Support Time Chart */}
-            <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">
-                Average Support Time (60-day Rolling Average)
-              </h3>
-              <p className="text-sm text-[#9099ac] mb-4">
-                Average days from model release to support for models released in the past 60 days
-              </p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      return `${date.getMonth() + 1}/${date.getDate()}`;
-                    }}
-                  />
-                  <YAxis
-                    stroke="#9099ac"
-                    tick={{ fill: '#9099ac', fontSize: 12 }}
-                    tickFormatter={(value) => `${value}d`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2228',
-                      border: '1px solid #3c3c4a',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value) =>
-                      value !== null ? [`${value} days`, ''] : ['N/A', '']
-                    }
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="litellmAvgDays"
-                    name="LiteLLM"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="evalProxyAvgDays"
-                    name="Eval Proxy"
-                    stroke="#ec4899"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="prodProxyAvgDays"
-                    name="Prod Proxy"
-                    stroke="#14b8a6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sdkAvgDays"
-                    name="SDK"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frontendAvgDays"
-                    name="Frontend"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="indexAvgDays"
-                    name="Index"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {/* GPT Chart */}
+              {daysUnsupportedData.gpt.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">GPT Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: gpt</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.gpt}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Gemini Chart */}
+              {daysUnsupportedData.gemini.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Gemini Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: gemini</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.gemini}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Open Models Chart */}
+              {daysUnsupportedData.open.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Open Models</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Pattern: qwen|minimax|glm|kimi</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.open}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Average Chart */}
+              {daysUnsupportedData.average.length > 0 && (
+                <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-6 lg:col-span-2 xl:col-span-1">
+                  <h3 className="text-lg font-semibold text-white mb-4">Average (All Families)</h3>
+                  <p className="text-xs text-[#9099ac] mb-4">Average across Claude, GPT, Gemini, and Open models</p>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={daysUnsupportedData.average}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#3c3c4a" />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis
+                        stroke="#9099ac"
+                        tick={{ fill: '#9099ac', fontSize: 10 }}
+                        tickFormatter={(value) => `${value}d`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1f2228',
+                          border: '1px solid #3c3c4a',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`${value} days`, '']}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line type="monotone" dataKey="litellm" name="LiteLLM" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="eval_proxy" name="Eval Proxy" stroke="#ec4899" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="prod_proxy" name="Prod Proxy" stroke="#14b8a6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="sdk" name="SDK" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="frontend" name="Frontend" stroke="#22c55e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="index" name="Index" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="complete" name="Complete" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
-          </div>
+          </>
         )}
 
         <footer className="mt-8 text-center text-[#9099ac] text-sm">
