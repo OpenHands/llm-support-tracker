@@ -805,45 +805,151 @@ def cleanup_infra_cache():
         _infra_cache["prod_proxy_history"] = None
 
 
+def search_infra_proxy_for_model_name(model_id: str, proxy_type: str) -> Optional[str]:
+    """
+    Search for when a model name first appeared in the proxy config.
+    
+    This does a git log search for the model name in the litellm.yaml file.
+    
+    Args:
+        model_id: The language model ID to search for
+        proxy_type: Either "eval_proxy" or "prod_proxy"
+    
+    Returns:
+        ISO timestamp of when the model name first appeared, or None
+    """
+    import subprocess
+    
+    path_map = {
+        "eval_proxy": "k8s/evaluation/litellm.yaml",
+        "prod_proxy": "k8s/production/litellm.yaml",
+    }
+    path = path_map.get(proxy_type)
+    if not path:
+        return None
+    
+    try:
+        cache = _get_infra_repo()
+        temp_dir = cache["temp_dir"]
+        
+        if not temp_dir:
+            return None
+        
+        # Search for the model name (case-insensitive)
+        model_lower = model_id.lower()
+        
+        # Get all commits that modified this file
+        result = subprocess.run(
+            ["git", "log", "--format=%H %aI", "--follow", "--", path],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if result.returncode != 0:
+            return None
+        
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append((parts[0], parts[1]))  # (sha, date)
+        
+        # Process commits oldest to newest, find first one containing the model
+        first_appearance = None
+        for sha, commit_date in reversed(commits):
+            result = subprocess.run(
+                ["git", "show", f"{sha}:{path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode != 0:
+                continue
+            
+            content_lower = result.stdout.lower()
+            # Check for model_name entry with this model
+            if f'model_name: "{model_lower}"' in content_lower or f"model_name: '{model_lower}'" in content_lower:
+                first_appearance = commit_date
+                break
+        
+        return first_appearance
+        
+    except Exception as e:
+        print(f"Warning: Error searching infra proxy for model name: {e}", file=sys.stderr)
+        return None
+
+
 def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str] = None) -> Optional[str]:
     """
-    Search for when a litellm version supporting the model was deployed to infra.
+    Search for when a model was first usable via the infra proxy.
 
-    This searches commit history for when any of the valid litellm versions
-    (that support the model) was first deployed to the specified environment.
+    This searches for two things:
+    1. When the model name first appeared directly in the proxy config
+    2. When a litellm version supporting the model was first deployed
+    
+    Returns the earlier of the two dates.
 
     Args:
         model_id: The language model ID to search for
         proxy_type: Either "eval_proxy" or "prod_proxy"
         valid_versions: List of litellm version tags that support the model.
-                       If None, returns None.
+                       Can be None if no official litellm support yet.
 
     Returns:
-        ISO timestamp of when a supporting version was first deployed, or None
+        ISO timestamp of when the model became usable, or None
     """
-    if valid_versions is None:
+    timestamps = []
+    
+    # Method 1: Check if model name appears directly in config
+    model_name_timestamp = search_infra_proxy_for_model_name(model_id, proxy_type)
+    if model_name_timestamp:
+        timestamps.append(model_name_timestamp)
+    
+    # Method 2: Check for litellm version deployment (if we have valid versions)
+    if valid_versions:
+        try:
+            cache = _get_infra_repo()
+            history = cache.get(f"{proxy_type}_history", [])
+            
+            if history:
+                valid_set = set(valid_versions)
+                for commit_date, deployed_version in history:
+                    if deployed_version in valid_set:
+                        timestamps.append(commit_date)
+                        break
+        except Exception as e:
+            print(f"Warning: Error searching infra proxy history: {e}", file=sys.stderr)
+    
+    if not timestamps:
         return None
     
-    try:
-        cache = _get_infra_repo()
-        history = cache.get(f"{proxy_type}_history", [])
-        
-        if not history:
-            return None
-        
-        # Convert to set for O(1) lookup
-        valid_set = set(valid_versions)
-        
-        # Find the earliest deployment of a valid version
-        for commit_date, deployed_version in history:
-            if deployed_version in valid_set:
-                return commit_date
-        
+    # Return the earliest timestamp
+    if len(timestamps) == 1:
+        return timestamps[0]
+    
+    # Parse and compare
+    from datetime import datetime
+    def parse_ts(ts):
+        for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
+            try:
+                return datetime.strptime(ts.replace("Z", "+00:00") if "Z" in ts else ts, fmt)
+            except ValueError:
+                continue
         return None
-        
-    except Exception as e:
-        print(f"Warning: Error searching infra proxy: {e}", file=sys.stderr)
-        return None
+    
+    parsed = [(t, parse_ts(t)) for t in timestamps]
+    parsed = [(t, p) for t, p in parsed if p is not None]
+    if parsed:
+        earliest = min(parsed, key=lambda x: x[1])
+        return earliest[0]
+    
+    return timestamps[0]
 
 
 def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:
