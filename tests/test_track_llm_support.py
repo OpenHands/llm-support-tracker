@@ -15,6 +15,7 @@ from track_llm_support import (
     get_litellm_model_search_terms,
     check_model_in_litellm_json,
     search_commits_for_model,
+    search_sdk_for_model,
     search_index_results_folder,
     search_infra_proxy,
     search_litellm_support,
@@ -310,15 +311,14 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_commits, mock_search_index, mock_search_infra, 
+        self, mock_search_sdk, mock_search_commits, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
-        mock_search_commits.side_effect = [
-            "2024-01-20T10:00:00Z",  # SDK
-            "2024-01-25T10:00:00Z",  # Frontend
-        ]
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
+        mock_search_commits.return_value = "2024-01-25T10:00:00Z"  # Frontend
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
         mock_search_infra.side_effect = [
             "2024-02-01T10:00:00Z",  # Eval proxy
@@ -349,14 +349,13 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_folder")
     @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_commits, mock_search_index, mock_search_infra, mock_find_versions
+        self, mock_search_sdk, mock_search_commits, mock_search_index, mock_search_infra, mock_find_versions
     ):
         """Test tracking when model is only found in some repositories."""
-        mock_search_commits.side_effect = [
-            "2024-01-20T10:00:00Z",  # SDK
-            None,  # Frontend
-        ]
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
+        mock_search_commits.return_value = None  # Frontend
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
         mock_find_versions.return_value = []  # No litellm versions support this model

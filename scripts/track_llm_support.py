@@ -197,6 +197,104 @@ def check_model_in_litellm_json(content: str, model_id: str) -> bool:
     return False
 
 
+# Module-level cache for SDK repo
+_sdk_cache = {
+    "temp_dir": None,
+}
+
+
+def _get_sdk_repo():
+    """Get or create the cached SDK repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _sdk_cache["temp_dir"] is not None:
+        return _sdk_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/software-agent-sdk.git"
+    else:
+        repo_url = "https://github.com/OpenHands/software-agent-sdk.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="sdk_")
+    
+    # Clone the repo (sparse checkout for just the llm directory)
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    _sdk_cache["temp_dir"] = temp_dir
+    
+    return _sdk_cache
+
+
+def cleanup_sdk_cache():
+    """Clean up the SDK repo cache."""
+    import shutil
+    if _sdk_cache["temp_dir"]:
+        shutil.rmtree(_sdk_cache["temp_dir"], ignore_errors=True)
+        _sdk_cache["temp_dir"] = None
+
+
+def search_sdk_for_model(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first added to the SDK.
+    
+    Uses git log -G (grep) to find the first commit that introduced the model name.
+    Searches only model_features.py where model lists are defined.
+    
+    Args:
+        model_id: The language model ID to search for
+        
+    Returns:
+        ISO timestamp of when the model was first added, or None
+    """
+    import subprocess
+    import re
+    
+    try:
+        cache = _get_sdk_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Get search terms for this model
+        search_terms = get_model_search_terms(model_id)
+        
+        earliest_date = None
+        
+        # Only search model_features.py where model lists are defined
+        search_path = "openhands-sdk/openhands/sdk/llm/utils/model_features.py"
+        
+        for term in search_terms:
+            # Escape regex special chars but keep it as a literal search
+            escaped_term = re.escape(term)
+            
+            # Use git log -G (grep in diff) to find when term was added
+            result = subprocess.run(
+                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                dates = result.stdout.strip().split("\n")
+                if dates:
+                    commit_date = dates[0]  # First commit (oldest)
+                    if earliest_date is None or commit_date < earliest_date:
+                        earliest_date = commit_date
+        
+        return earliest_date
+        
+    except Exception as e:
+        print(f"Warning: Error searching SDK: {e}", file=sys.stderr)
+        return None
+
+
 # Module-level cache for litellm repo
 _litellm_cache = {
     "temp_dir": None,
@@ -637,11 +735,9 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "litellm_support_timestamp": None,
     }
 
-    # Search for SDK support
+    # Search for SDK support using local git clone
     print(f"Searching for {model_id} in software-agent-sdk...")
-    sdk_timestamp = search_commits_for_model(
-        REPOS["sdk"], model_id, SEARCH_PATHS["sdk"]
-    )
+    sdk_timestamp = search_sdk_for_model(model_id)
     result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
 
     # Search for frontend support

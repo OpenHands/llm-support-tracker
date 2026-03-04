@@ -12,7 +12,7 @@ import sys
 # Add parent directory to path so we can import track_llm_support
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from track_llm_support import track_llm_support, cleanup_litellm_cache, cleanup_infra_cache
+from track_llm_support import track_llm_support, cleanup_litellm_cache, cleanup_infra_cache, cleanup_sdk_cache
 
 import requests
 
@@ -114,6 +114,7 @@ def main():
             print(f"Error processing {model}: {e}")
 
     # Clean up caches
+    cleanup_sdk_cache()
     cleanup_litellm_cache()
     cleanup_infra_cache()
 
