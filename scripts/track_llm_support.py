@@ -495,14 +495,17 @@ def find_litellm_versions_supporting_model(model_id: str) -> list[str]:
     """
     Find all litellm versions (tags) that support the given model.
 
-    Uses binary search to find the first version, then returns all versions
-    from that point onward (assuming once added, a model stays).
+    Scans recent tags to find versions that include the model.
+    Due to release branching, models may not appear monotonically across tags.
+    
+    Strategy: Scan the most recent 100 tags (covers ~6 months of releases),
+    which should be sufficient to find the first supporting version.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        List of version tags that support the model (newest first)
+        List of version tags that support the model (newest first by date)
     """
     import subprocess
     
@@ -521,15 +524,12 @@ def find_litellm_versions_supporting_model(model_id: str) -> list[str]:
         if not all_tags:
             return []
         
-        # Binary search through tags (sorted newest first by date)
-        # Find the oldest tag that has the model
-        left, right = 0, len(all_tags) - 1
-        first_index_with_model = None
+        # Scan through recent tags (sorted newest first by date)
+        # Limit to 100 most recent tags for performance
+        tags_to_check = all_tags[:100]
+        supporting_tags = []
         
-        while left <= right:
-            mid = (left + right) // 2
-            tag = all_tags[mid]
-            
+        for tag in tags_to_check:
             # Use git show to read file at tag (faster than checkout)
             result = subprocess.run(
                 ["git", "show", f"{tag}:{file_path}"],
@@ -540,16 +540,9 @@ def find_litellm_versions_supporting_model(model_id: str) -> list[str]:
             )
             
             if result.returncode == 0 and check_model_in_litellm_json(result.stdout, model_id):
-                first_index_with_model = mid
-                left = mid + 1  # Search for older tags
-            else:
-                right = mid - 1  # Search for newer tags
+                supporting_tags.append(tag)
         
-        if first_index_with_model is None:
-            return []
-        
-        # Return all tags from newest (index 0) to the first that has the model
-        return all_tags[:first_index_with_model + 1]
+        return supporting_tags
         
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         print(f"Warning: Error searching litellm: {e}", file=sys.stderr)
