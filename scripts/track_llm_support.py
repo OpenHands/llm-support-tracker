@@ -742,17 +742,24 @@ def cleanup_index_results_cache():
         _index_results_cache["temp_dir"] = None
 
 
+# Required benchmarks for complete index results
+REQUIRED_BENCHMARKS = {"swe-bench", "gaia", "commit0", "swt-bench", "swe-bench-multimodal"}
+
+
 def search_index_results_for_model(model_id: str) -> Optional[str]:
     """
-    Search for when a model folder was added to openhands-index-results.
+    Search for when a model's results were completed in openhands-index-results.
     
-    Uses local git clone to find the first commit that added results for this model.
+    A model is considered complete only when all 5 required benchmarks are present:
+    swe-bench, gaia, commit0, swt-bench, swe-bench-multimodal.
+    
+    Uses local git clone to find when the results became complete.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of when the folder was created, or None if not found
+        ISO timestamp of when results were completed, or None if incomplete/not found
     """
     import subprocess
     
@@ -774,9 +781,24 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
         if not folder_name:
             return None
         
-        # Get the first commit that added this folder using git log
+        # Check if all required benchmarks are present
+        scores_path = os.path.join(results_dir, folder_name, "scores.json")
+        if not os.path.exists(scores_path):
+            return None
+        
+        with open(scores_path, "r") as f:
+            scores_data = json.load(f)
+        
+        present_benchmarks = {entry.get("benchmark") for entry in scores_data}
+        missing_benchmarks = REQUIRED_BENCHMARKS - present_benchmarks
+        
+        if missing_benchmarks:
+            print(f"Warning: {model_id} missing benchmarks: {missing_benchmarks}", file=sys.stderr)
+            return None
+        
+        # Get the most recent commit that modified scores.json (when results were completed)
         result = subprocess.run(
-            ["git", "log", "--format=%aI", "--reverse", "--diff-filter=A", "--", f"results/{folder_name}"],
+            ["git", "log", "--format=%aI", "-1", "--", f"results/{folder_name}/scores.json"],
             cwd=temp_dir,
             capture_output=True,
             text=True,
@@ -784,9 +806,7 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
         )
         
         if result.returncode == 0 and result.stdout.strip():
-            dates = result.stdout.strip().split("\n")
-            if dates:
-                return dates[0]  # First commit (oldest)
+            return result.stdout.strip()
         
         return None
         

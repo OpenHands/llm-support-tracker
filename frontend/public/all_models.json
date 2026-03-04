@@ -27,7 +27,7 @@
     "tier": 1,
     "sdk_support_timestamp": null,
     "frontend_support_timestamp": null,
-    "index_results_timestamp": "2026-03-02T09:02:54-06:00",
+    "index_results_timestamp": null,
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
     "litellm_support_timestamp": null
@@ -148,7 +148,7 @@
     "tier": 1,
     "sdk_support_timestamp": "2026-02-16T17:05:53-08:00",
     "frontend_support_timestamp": null,
-    "index_results_timestamp": "2026-02-24T17:02:45-06:00",
+    "index_results_timestamp": null,
     "eval_proxy_timestamp": null,
     "prod_proxy_timestamp": null,
     "litellm_support_timestamp": "2026-02-16T17:05:53-08:00"

@@ -209,15 +209,27 @@ class TestSearchIndexResultsForModel:
 
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_success(self, mock_get_repo):
-        """Test successful index results folder search."""
+        """Test successful index results folder search with complete benchmarks."""
         import subprocess
         
         # Create a mock temp directory structure
         with tempfile.TemporaryDirectory() as temp_dir:
             results_dir = os.path.join(temp_dir, "results")
             os.makedirs(results_dir)
-            os.makedirs(os.path.join(results_dir, "test-model"))
+            model_dir = os.path.join(results_dir, "test-model")
+            os.makedirs(model_dir)
             os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            # Create scores.json with all required benchmarks
+            scores_data = [
+                {"benchmark": "swe-bench", "score": 50.0},
+                {"benchmark": "gaia", "score": 45.0},
+                {"benchmark": "commit0", "score": 30.0},
+                {"benchmark": "swt-bench", "score": 40.0},
+                {"benchmark": "swe-bench-multimodal", "score": 35.0},
+            ]
+            with open(os.path.join(model_dir, "scores.json"), "w") as f:
+                json.dump(scores_data, f)
             
             mock_get_repo.return_value = {"temp_dir": temp_dir}
             
@@ -225,11 +237,35 @@ class TestSearchIndexResultsForModel:
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0,
-                    stdout="2024-01-15T10:00:00Z\n2024-02-01T10:00:00Z\n"
+                    stdout="2024-01-15T10:00:00Z"
                 )
                 
                 result = search_index_results_for_model("test-model")
                 assert result == "2024-01-15T10:00:00Z"
+
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_incomplete_benchmarks(self, mock_get_repo):
+        """Test index results search returns None when benchmarks are incomplete."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            model_dir = os.path.join(results_dir, "test-model")
+            os.makedirs(model_dir)
+            
+            # Create scores.json with only 4 benchmarks (missing swe-bench-multimodal)
+            scores_data = [
+                {"benchmark": "swe-bench", "score": 50.0},
+                {"benchmark": "gaia", "score": 45.0},
+                {"benchmark": "commit0", "score": 30.0},
+                {"benchmark": "swt-bench", "score": 40.0},
+            ]
+            with open(os.path.join(model_dir, "scores.json"), "w") as f:
+                json.dump(scores_data, f)
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            result = search_index_results_for_model("test-model")
+            assert result is None
 
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_folder_not_found(self, mock_get_repo):
