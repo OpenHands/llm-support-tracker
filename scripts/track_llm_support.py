@@ -375,7 +375,7 @@ def search_sdk_for_model(model_id: str) -> Optional[str]:
     Search for when a model was first added to the SDK.
     
     Uses git log -G (grep) to find the first commit that introduced the model name.
-    Searches only model_features.py where model lists are defined.
+    Searches model_features.py and resolve_model_config.py where models are defined.
     
     Args:
         model_id: The language model ID to search for
@@ -395,28 +395,32 @@ def search_sdk_for_model(model_id: str) -> Optional[str]:
         
         earliest_date = None
         
-        # Only search model_features.py where model lists are defined
-        search_path = "openhands-sdk/openhands/sdk/llm/utils/model_features.py"
+        # Search both model_features.py and resolve_model_config.py
+        search_paths = [
+            "openhands-sdk/openhands/sdk/llm/utils/model_features.py",
+            ".github/run-eval/resolve_model_config.py",
+        ]
         
-        for term in search_terms:
-            # Escape regex special chars but keep it as a literal search
-            escaped_term = re.escape(term)
-            
-            # Use git log -G (grep in diff) to find when term was added
-            result = subprocess.run(
-                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
-                cwd=temp_dir,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            
-            if result.returncode == 0 and result.stdout.strip():
-                dates = result.stdout.strip().split("\n")
-                if dates:
-                    commit_date = dates[0]  # First commit (oldest)
-                    if earliest_date is None or commit_date < earliest_date:
-                        earliest_date = commit_date
+        for search_path in search_paths:
+            for term in search_terms:
+                # Escape regex special chars but keep it as a literal search
+                escaped_term = re.escape(term)
+                
+                # Use git log -G (grep in diff) to find when term was added
+                result = subprocess.run(
+                    ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                    cwd=temp_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    dates = result.stdout.strip().split("\n")
+                    if dates:
+                        commit_date = dates[0]  # First commit (oldest)
+                        if earliest_date is None or commit_date < earliest_date:
+                            earliest_date = commit_date
         
         return earliest_date
         
