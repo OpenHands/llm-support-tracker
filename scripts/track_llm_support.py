@@ -189,7 +189,8 @@ def get_litellm_model_search_terms(model_id: str) -> list[str]:
         # DeepSeek V3.2 Reasoner - use versioned name only
         # Note: "deepseek-reasoner" is a separate unversioned model that predates V3.2
         "deepseek-v3.2-reasoner": ["deepseek/deepseek-v3.2"],
-        # Gemini 3 Flash - litellm uses "preview" suffix
+        # Gemini 3 Pro/Flash - litellm uses "preview" suffix
+        "gemini-3-pro": ["gemini-3-pro-preview"],
         "gemini-3-flash": ["gemini-3-flash-preview"],
         # GLM-5 - litellm uses zai/ prefix
         "glm-5": ["zai/glm-5"],

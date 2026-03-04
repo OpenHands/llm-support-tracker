@@ -214,6 +214,16 @@ class TestGetLitellmModelSearchTerms:
         terms = get_litellm_model_search_terms("GLM-5")
         assert terms == ["zai/glm-5"]
 
+    def test_gemini_3_pro_alias(self):
+        """Test Gemini-3-Pro returns preview suffix."""
+        terms = get_litellm_model_search_terms("Gemini-3-Pro")
+        assert terms == ["gemini-3-pro-preview"]
+
+    def test_gemini_3_flash_alias(self):
+        """Test Gemini-3-Flash returns preview suffix."""
+        terms = get_litellm_model_search_terms("Gemini-3-Flash")
+        assert terms == ["gemini-3-flash-preview"]
+
     def test_model_without_alias(self):
         """Test model without alias returns lowercase original."""
         terms = get_litellm_model_search_terms("claude-sonnet-4-5")

@@ -72,9 +72,9 @@
     "sdk_support_timestamp": "2025-11-18T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
-    "eval_proxy_timestamp": "2026-01-26T08:48:42-08:00",
-    "prod_proxy_timestamp": "2026-01-27T12:10:27-08:00",
-    "litellm_support_timestamp": "2026-01-24T09:39:23-08:00"
+    "eval_proxy_timestamp": "2026-01-14T13:43:57-05:00",
+    "prod_proxy_timestamp": "2026-01-14T12:50:34-05:00",
+    "litellm_support_timestamp": "2025-11-18T16:06:06-08:00"
   },
   {
     "model_id": "Kimi-K2-Thinking",
