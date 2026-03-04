@@ -79,7 +79,7 @@
   {
     "model_id": "Kimi-K2-Thinking",
     "release_date": "2025-11-06",
-    "tier": 1,
+    "tier": 2,
     "sdk_support_timestamp": "2025-11-11T12:26:31-05:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
@@ -101,7 +101,7 @@
   {
     "model_id": "MiniMax-M2.1",
     "release_date": "2025-09-01",
-    "tier": 1,
+    "tier": 2,
     "sdk_support_timestamp": "2026-01-12T08:13:21-08:00",
     "frontend_support_timestamp": null,
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
