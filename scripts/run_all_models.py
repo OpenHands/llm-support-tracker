@@ -12,13 +12,16 @@ import sys
 # Add parent directory to path so we can import track_llm_support
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from track_llm_support import track_llm_support
+from track_llm_support import (
+    track_llm_support,
+    cleanup_litellm_cache,
+    cleanup_infra_cache,
+    cleanup_sdk_cache,
+    cleanup_frontend_cache,
+    cleanup_index_results_cache,
+    _get_index_results_repo,
+)
 
-import requests
-
-
-GITHUB_API_BASE = "https://api.github.com"
-INDEX_RESULTS_REPO = "OpenHands/openhands-index-results"
 
 # Release dates for known models (verified from official sources)
 MODEL_RELEASE_DATES = {
@@ -52,35 +55,26 @@ MODEL_RELEASE_DATES = {
 }
 
 
-def get_github_headers() -> dict:
-    """Get headers for GitHub API requests."""
-    headers = {
-        "Accept": "application/vnd.github.v3+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
 def get_models_from_index_results() -> list[str]:
-    """Get list of model folders from openhands-index-results."""
-    headers = get_github_headers()
-    url = f"{GITHUB_API_BASE}/repos/{INDEX_RESULTS_REPO}/contents/results"
-
-    response = requests.get(url, headers=headers, timeout=30)
-    if response.status_code != 200:
-        print(f"Error fetching models: {response.status_code}")
+    """Get list of model folders from openhands-index-results using local git clone."""
+    try:
+        cache = _get_index_results_repo()
+        temp_dir = cache["temp_dir"]
+        
+        results_dir = os.path.join(temp_dir, "results")
+        if not os.path.exists(results_dir):
+            print("No results directory found!")
+            return []
+        
+        models = []
+        for name in os.listdir(results_dir):
+            if os.path.isdir(os.path.join(results_dir, name)):
+                models.append(name)
+        
+        return sorted(models)
+    except Exception as e:
+        print(f"Error fetching models: {e}")
         return []
-
-    contents = response.json()
-    models = []
-    for item in contents:
-        if item.get("type") == "dir":
-            models.append(item.get("name"))
-
-    return sorted(models)
 
 
 def main():
@@ -94,8 +88,9 @@ def main():
     print(f"Found {len(models)} models: {models}")
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(os.path.dirname(script_dir), "data")
-    os.makedirs(data_dir, exist_ok=True)
+    # Write directly to frontend/public - the single source of truth
+    output_dir = os.path.join(os.path.dirname(script_dir), "frontend", "public")
+    os.makedirs(output_dir, exist_ok=True)
 
     results = []
     for model in models:
@@ -113,8 +108,15 @@ def main():
         except Exception as e:
             print(f"Error processing {model}: {e}")
 
-    # Write single source of truth
-    output_file = os.path.join(data_dir, "all_models.json")
+    # Clean up all caches
+    cleanup_sdk_cache()
+    cleanup_frontend_cache()
+    cleanup_index_results_cache()
+    cleanup_litellm_cache()
+    cleanup_infra_cache()
+
+    # Write to frontend/public - single source of truth
+    output_file = os.path.join(output_dir, "all_models.json")
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
 

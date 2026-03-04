@@ -52,17 +52,13 @@ def get_github_headers() -> dict:
 def get_model_search_terms(model_id: str) -> list[str]:
     """
     Get a list of search terms for a model, including the full name and family names.
-
-    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3", "gemini-3-pro"]
+    
+    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3"]
     """
     import re
-
+    
     terms = [model_id]
-
-    # Add lowercase version
-    if model_id.lower() not in terms:
-        terms.append(model_id.lower())
-
+    
     # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
     suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
     for suffix in suffixes:
@@ -70,57 +66,32 @@ def get_model_search_terms(model_id: str) -> list[str]:
             base = model_id[:-len(suffix)]
             if base not in terms:
                 terms.append(base)
-            if base.lower() not in terms:
-                terms.append(base.lower())
-
+    
     # Also try with spaces instead of hyphens
     spaced = model_id.replace("-", " ")
     if spaced not in terms:
         terms.append(spaced)
-
+    
     # For versioned models like "claude-sonnet-4-5", also try "claude-sonnet-4"
     version_match = re.match(r"(.+)-(\d+)-(\d+)$", model_id)
     if version_match:
         base_with_major = f"{version_match.group(1)}-{version_match.group(2)}"
         if base_with_major not in terms:
             terms.append(base_with_major)
-
+    
     # For models like "Qwen3-Coder-480B", also try "qwen-3-coder" (lowercase with hyphen)
     # Convert "Qwen3" to "qwen-3", "GPT5" to "gpt-5", etc.
     normalized = re.sub(r'([a-zA-Z])(\d)', r'\1-\2', model_id).lower()
     if normalized not in terms:
         terms.append(normalized)
-
-    # Try removing version numbers entirely for models like "DeepSeek-V3.2-Reasoner" -> "deepseek-reasoner"
-    # Remove patterns like V3.2, -3-, etc.
-    no_version = re.sub(r'-?[Vv]?\d+\.?\d*-?', '-', model_id).strip('-')
-    no_version = re.sub(r'--+', '-', no_version)  # Clean up double hyphens
-    if no_version not in terms:
-        terms.append(no_version)
-    if no_version.lower() not in terms:
-        terms.append(no_version.lower())
-
-    # For "Nemotron-3-Nano" type models, try "nemotron-nano" (remove middle version number)
-    parts = model_id.split('-')
-    if len(parts) >= 3:
-        # Try removing middle numeric parts
-        non_numeric_parts = [p for p in parts if not p.isdigit()]
-        if len(non_numeric_parts) >= 2:
-            joined = '-'.join(non_numeric_parts)
-            if joined not in terms:
-                terms.append(joined)
-            if joined.lower() not in terms:
-                terms.append(joined.lower())
-
+    
     # Also try just the model family name (e.g., "Qwen" from "Qwen3-Coder-480B")
     family_match = re.match(r'^([A-Za-z]+)', model_id)
     if family_match:
         family = family_match.group(1)
         if family not in terms and len(family) > 2:
             terms.append(family)
-        if family.lower() not in terms and len(family) > 2:
-            terms.append(family.lower())
-
+    
     return terms
 
 
@@ -139,6 +110,8 @@ def search_commits_for_model(
         ISO timestamp of the first commit mentioning the model, or None if not found
     """
     headers = get_github_headers()
+    # Commit search requires a special Accept header
+    headers["Accept"] = "application/vnd.github.cloak-preview+json"
     search_url = f"{GITHUB_API_BASE}/search/commits"
     
     # Get all search terms for this model
@@ -169,416 +142,671 @@ def search_commits_for_model(
     return earliest_date
 
 
-def search_litellm_support(model_id: str) -> Optional[str]:
+def get_litellm_model_search_terms(model_id: str) -> list[str]:
     """
-    Search for when a model was added to BerriAI/litellm's model_prices_and_context_window.json.
-
-    This uses binary search through commit history via the GitHub API to find 
-    the first commit where the model appears in the model prices file.
-
-    Args:
-        model_id: The language model ID to search for
-
-    Returns:
-        ISO timestamp of when the model was added, or None if not found
+    Get search terms for finding a model in litellm's model_prices_and_context_window.json.
+    
+    Returns terms that should match as JSON keys in the model prices file.
     """
-    headers = get_github_headers()
-    repo = "BerriAI/litellm"
-    file_path = "model_prices_and_context_window.json"
-    search_terms = get_model_search_terms(model_id)
-    
-    # First, check if model exists in current version using any search term
-    current_url = f"https://raw.githubusercontent.com/{repo}/main/{file_path}"
-    try:
-        response = requests.get(current_url, headers=headers, timeout=30)
-        if response.status_code != 200:
-            return None
-            
-        current_content = response.text.lower()
-        found = False
-        for term in search_terms:
-            if term.lower() in current_content:
-                found = True
-                break
-        if not found:
-            return None
-    except requests.RequestException:
-        return None
-    
-    # Get commits that modified the model prices file
-    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    all_commits = []
-    page = 1
-    max_pages = 10
-    
-    while page <= max_pages:
-        params = {"path": file_path, "per_page": 100, "page": page}
-        try:
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-            if response.status_code != 200:
-                break
-            commits = response.json()
-            if not commits:
-                break
-            all_commits.extend(commits)
-            if len(commits) < 100:
-                break
-            page += 1
-        except requests.RequestException:
-            break
-    
-    if not all_commits:
-        return None
-    
-    def content_has_model(content: str) -> bool:
-        """Check if any search term appears in the content."""
-        content_lower = content.lower()
-        for term in search_terms:
-            if term.lower() in content_lower:
-                return True
-        return False
-    
-    # Binary search to find the first commit where the model exists
-    left, right = 0, len(all_commits) - 1
-    first_commit_with_model = all_commits[0]
-    
-    while left <= right:
-        mid = (left + right) // 2
-        commit_sha = all_commits[mid].get("sha")
-        
-        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
-        try:
-            response = requests.get(file_url, headers=headers, timeout=30)
-            if response.status_code == 200:
-                if content_has_model(response.text):
-                    first_commit_with_model = all_commits[mid]
-                    left = mid + 1
-                else:
-                    right = mid - 1
-            else:
-                right = mid - 1
-        except requests.RequestException:
-            right = mid - 1
-    
-    return first_commit_with_model.get("commit", {}).get("author", {}).get("date")
-
-
-def search_index_results_folder(model_id: str) -> Optional[str]:
-    """
-    Search for when a model first had complete benchmark results in openhands-index-results.
-
-    A model is considered "complete" when it has results for all 5 required benchmarks:
-    swe-bench, commit0, gaia, swt-bench, and swe-bench-multimodal.
-
-    Args:
-        model_id: The language model ID to search for
-
-    Returns:
-        ISO timestamp of the first commit with complete results, or None if not found/incomplete
-    """
-    headers = get_github_headers()
-    repo = REPOS["index_results"]
-    required_benchmarks = {"swe-bench", "commit0", "gaia", "swt-bench", "swe-bench-multimodal"}
-
-    # First, check if the folder exists
-    contents_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/results"
-
-    try:
-        response = requests.get(contents_url, headers=headers, timeout=30)
-        if response.status_code != 200:
-            return None
-
-        contents = response.json()
-        folder_name = None
-
-        # Find the folder that matches the model ID (case-insensitive)
-        for item in contents:
-            if item.get("type") == "dir":
-                name = item.get("name", "")
-                if model_id.lower() == name.lower():
-                    folder_name = name
-                    break
-
-        if not folder_name:
-            return None
-
-        # Get the commit history for scores.json
-        commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-        params = {"path": f"results/{folder_name}/scores.json", "per_page": 100}
-
-        response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-        if response.status_code != 200:
-            return None
-
-        commits = response.json()
-        if not commits:
-            return None
-
-        # Go through commits from oldest to newest to find first complete scores.json
-        # Commits are returned newest-first, so reverse the list
-        for commit in reversed(commits):
-            commit_sha = commit.get("sha")
-            commit_date = commit.get("commit", {}).get("author", {}).get("date")
-
-            if not commit_sha or not commit_date:
-                continue
-
-            # Fetch scores.json at this commit
-            scores_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/results/{folder_name}/scores.json"
-            try:
-                scores_response = requests.get(scores_url, headers=headers, timeout=30)
-                if scores_response.status_code == 200:
-                    scores = scores_response.json()
-                    present_benchmarks = {entry.get("benchmark") for entry in scores if entry.get("benchmark")}
-
-                    # Check if all required benchmarks are present
-                    if required_benchmarks.issubset(present_benchmarks):
-                        return commit_date
-            except (requests.RequestException, json.JSONDecodeError):
-                continue
-
-        # No commit found with complete benchmarks
-        return None
-
-    except requests.RequestException as e:
-        print(f"Warning: Error searching index results: {e}", file=sys.stderr)
-
-    return None
-
-
-def get_providers_from_model(model_id: str) -> list[str]:
-    """
-    Determine possible providers from a model ID for wildcard routing lookup.
-    Returns a list of providers to check (in order of preference).
-    """
-    model_lower = model_id.lower()
-    providers = []
-    
-    # Map model prefixes to provider wildcards
-    # These are the wildcards configured in the infra litellm.yaml
-    provider_mappings = {
-        "claude": "anthropic",
-        "gpt": "openai",
-        "gemini": "gemini",
-        "deepseek": "deepseek",
-        "mistral": "mistral",
-        "qwen": "together_ai",  # Qwen models often via together_ai
-        "llama": "together_ai",
-        "kimi": "moonshot",
+    # Model-specific aliases only when litellm uses a different name
+    MODEL_ALIASES = {
+        # DeepSeek V3.2 Reasoner - use versioned name only
+        # Note: "deepseek-reasoner" is a separate unversioned model that predates V3.2
+        "deepseek-v3.2-reasoner": ["deepseek/deepseek-v3.2"],
+        # Gemini 3 Flash - litellm uses "preview" suffix
+        "gemini-3-flash": ["gemini-3-flash-preview"],
+        # GLM-5 - litellm uses zai/ prefix
+        "glm-5": ["zai/glm-5"],
+        # Nemotron 3 Nano - check for nvidia nemotron nano variants
+        "nemotron-3-nano": ["nvidia-nemotron-nano"],
+        # Qwen3 Coder models - litellm uses qwen. prefix on bedrock
+        "qwen3-coder-480b": ["qwen3-coder-480b"],
+        "qwen3-coder-next": ["qwen.qwen3-coder-next"],
     }
     
-    for prefix, provider in provider_mappings.items():
-        if model_lower.startswith(prefix):
-            providers.append(provider)
-            break
+    model_lower = model_id.lower()
     
-    # Many models can also be accessed via hosted_vllm or openrouter wildcards
-    # These are fallback options that support a wide range of models
-    providers.extend(["hosted_vllm", "openrouter"])
+    # Use alias if defined, otherwise use the model ID as-is
+    if model_lower in MODEL_ALIASES:
+        return MODEL_ALIASES[model_lower]
     
-    return providers
+    return [model_lower]
 
 
-def get_provider_from_model(model_id: str) -> Optional[str]:
+def check_model_in_litellm_json(content: str, model_id: str) -> bool:
     """
-    Determine the primary provider from a model ID for wildcard routing lookup.
-    """
-    providers = get_providers_from_model(model_id)
-    return providers[0] if providers else None
-
-
-def check_wildcard_in_file(repo: str, path: str, provider: str) -> Optional[str]:
-    """
-    Check if a provider wildcard exists in the current file and find when it was added.
+    Check if a model exists as a key in the litellm model_prices_and_context_window.json content.
     
-    Returns the date of the first commit that added the wildcard pattern.
-    """
-    headers = get_github_headers()
+    This checks for the model name as a JSON key to avoid false positives from
+    partial string matches in comments or other fields.
     
-    # First check if the wildcard exists in the current file
-    file_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/{path}"
-    try:
-        response = requests.get(file_url, headers=headers, timeout=30)
-        if response.status_code == 200:
-            import base64
-            content = base64.b64decode(response.json().get("content", "")).decode("utf-8")
-            wildcard_pattern = f'{provider}/*'
-            
-            if wildcard_pattern not in content:
-                return None
-            
-            # Wildcard exists, find when it was first added
-            # Search commit messages for when this provider was added
-            commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-            params = {"path": path, "per_page": 100}
-            
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-            if response.status_code == 200:
-                commits = response.json()
-                
-                # Look for commits that mention this provider
-                provider_commits = []
-                for commit in commits:
-                    message = commit.get("commit", {}).get("message", "").lower()
-                    commit_date = commit.get("commit", {}).get("author", {}).get("date")
-                    if commit_date and provider.lower() in message:
-                        provider_commits.append(commit_date)
-                
-                # If found commits mentioning the provider, return the oldest
-                if provider_commits:
-                    return provider_commits[-1]
-                
-                # Otherwise, assume it was in the initial file creation
-                if commits:
-                    return commits[-1].get("commit", {}).get("author", {}).get("date")
-    except requests.RequestException:
-        pass
-    
-    return None
-
-
-def extract_litellm_version_from_yaml(yaml_content: str) -> Optional[str]:
-    """
-    Extract the full litellm version tag from a litellm.yaml file content.
-
-    The version is in the image.tag field, e.g., "v1.81.9-stable.gemini.3.1-pro.sonnet-4.6"
-
     Args:
-        yaml_content: The YAML file content
-
+        content: The JSON file content (as string)
+        model_id: The model ID to search for
+    
     Returns:
-        The full litellm version tag string, or None if not found
+        True if the model exists as a key in the JSON
     """
-    import re
-
-    # Look for image tag pattern - extract the FULL tag, not just the version number
-    # Can be in format: tag: v1.81.9-stable or tag: "v1.81.9-stable.gemini.3.1-pro"
-    match = re.search(r'tag:\s*["\']?(v[\d.]+[^\s"\']*)', yaml_content)
-    if match:
-        return match.group(1)
-
-    return None
-
-
-def check_litellm_version_supports_model(version: str, model_id: str) -> bool:
-    """
-    Check if a specific litellm version supports a model.
-
-    Args:
-        version: Full litellm version tag (e.g., "v1.81.9-stable.gemini.3.1-pro.sonnet-4.6")
-        model_id: The model ID to check
-
-    Returns:
-        True if the version supports the model, False otherwise
-    """
-    headers = get_github_headers()
-    search_terms = get_model_search_terms(model_id)
-
-    # Fetch model_prices_and_context_window.json at this version tag
-    file_url = f"https://raw.githubusercontent.com/BerriAI/litellm/{version}/model_prices_and_context_window.json"
-
-    try:
-        response = requests.get(file_url, headers=headers, timeout=30)
-        if response.status_code == 200:
-            content = response.text.lower()
-            # Check if any search term appears in the file
-            for term in search_terms:
-                if term.lower() in content:
-                    return True
-    except requests.RequestException:
-        pass
-
+    search_terms = get_litellm_model_search_terms(model_id)
+    content_lower = content.lower()
+    
+    for term in search_terms:
+        # Check for the model as a JSON key (surrounded by quotes and followed by colon)
+        # Pattern: "model_name": { or "provider/model_name": {
+        if f'"{term}":' in content_lower or f'/{term}":' in content_lower:
+            return True
+    
     return False
 
 
-def search_infra_proxy(model_id: str, proxy_type: str) -> Optional[str]:
-    """
-    Search for when a model was first supported in the infra proxy deployment.
+# Module-level cache for SDK repo
+_sdk_cache = {
+    "temp_dir": None,
+}
 
-    This works by:
-    1. Getting the commit history of the litellm.yaml file
-    2. For each commit (oldest to newest), extracting the deployed litellm version tag
-    3. Checking if that litellm version supports the model
-    4. Returning the date of the first deployment where the model is supported
+
+def _get_sdk_repo():
+    """Get or create the cached SDK repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _sdk_cache["temp_dir"] is not None:
+        return _sdk_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/software-agent-sdk.git"
+    else:
+        repo_url = "https://github.com/OpenHands/software-agent-sdk.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="sdk_")
+    
+    # Clone the repo (sparse checkout for just the llm directory)
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    _sdk_cache["temp_dir"] = temp_dir
+    
+    return _sdk_cache
+
+
+def cleanup_sdk_cache():
+    """Clean up the SDK repo cache."""
+    import shutil
+    if _sdk_cache["temp_dir"]:
+        shutil.rmtree(_sdk_cache["temp_dir"], ignore_errors=True)
+        _sdk_cache["temp_dir"] = None
+
+
+def search_sdk_for_model(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first added to the SDK.
+    
+    Uses git log -G (grep) to find the first commit that introduced the model name.
+    Searches only model_features.py where model lists are defined.
+    
+    Args:
+        model_id: The language model ID to search for
+        
+    Returns:
+        ISO timestamp of when the model was first added, or None
+    """
+    import subprocess
+    import re
+    
+    try:
+        cache = _get_sdk_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Get search terms for this model
+        search_terms = get_model_search_terms(model_id)
+        
+        earliest_date = None
+        
+        # Only search model_features.py where model lists are defined
+        search_path = "openhands-sdk/openhands/sdk/llm/utils/model_features.py"
+        
+        for term in search_terms:
+            # Escape regex special chars but keep it as a literal search
+            escaped_term = re.escape(term)
+            
+            # Use git log -G (grep in diff) to find when term was added
+            result = subprocess.run(
+                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                dates = result.stdout.strip().split("\n")
+                if dates:
+                    commit_date = dates[0]  # First commit (oldest)
+                    if earliest_date is None or commit_date < earliest_date:
+                        earliest_date = commit_date
+        
+        return earliest_date
+        
+    except Exception as e:
+        print(f"Warning: Error searching SDK: {e}", file=sys.stderr)
+        return None
+
+
+# Module-level cache for frontend repo
+_frontend_cache = {
+    "temp_dir": None,
+}
+
+
+def _get_frontend_repo():
+    """Get or create the cached frontend repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _frontend_cache["temp_dir"] is not None:
+        return _frontend_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/OpenHands.git"
+    else:
+        repo_url = "https://github.com/OpenHands/OpenHands.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="frontend_")
+    
+    # Clone the repo with filter for performance
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=180,
+    )
+    
+    _frontend_cache["temp_dir"] = temp_dir
+    
+    return _frontend_cache
+
+
+def cleanup_frontend_cache():
+    """Clean up the frontend repo cache."""
+    import shutil
+    if _frontend_cache["temp_dir"]:
+        shutil.rmtree(_frontend_cache["temp_dir"], ignore_errors=True)
+        _frontend_cache["temp_dir"] = None
+
+
+def search_frontend_for_model(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first added to the frontend.
+    
+    Uses git log -G to find the first commit that introduced the model name
+    in verified-models.ts.
+    
+    Args:
+        model_id: The language model ID to search for
+        
+    Returns:
+        ISO timestamp of when the model was first added, or None
+    """
+    import subprocess
+    import re
+    
+    try:
+        cache = _get_frontend_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Get search terms for this model
+        search_terms = get_model_search_terms(model_id)
+        
+        earliest_date = None
+        
+        # Search in verified-models.ts
+        search_path = "frontend/src/utils/verified-models.ts"
+        
+        for term in search_terms:
+            # Escape regex special chars
+            escaped_term = re.escape(term)
+            
+            # Use git log -G to find when term was added
+            result = subprocess.run(
+                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                dates = result.stdout.strip().split("\n")
+                if dates:
+                    commit_date = dates[0]  # First commit (oldest)
+                    if earliest_date is None or commit_date < earliest_date:
+                        earliest_date = commit_date
+        
+        return earliest_date
+        
+    except Exception as e:
+        print(f"Warning: Error searching frontend: {e}", file=sys.stderr)
+        return None
+
+
+# Module-level cache for litellm repo
+_litellm_cache = {
+    "temp_dir": None,
+    "tags": None,
+    "tag_dates": None,
+    "current_content": None,
+}
+
+
+def _get_litellm_repo():
+    """Get or create the cached litellm repo clone."""
+    import subprocess
+    import tempfile
+    import re
+    
+    if _litellm_cache["temp_dir"] is not None:
+        return _litellm_cache
+    
+    repo_url = "https://github.com/BerriAI/litellm.git"
+    file_path = "model_prices_and_context_window.json"
+    
+    temp_dir = tempfile.mkdtemp(prefix="litellm_")
+    
+    # Shallow clone with tags - fast initial clone
+    subprocess.run(
+        ["git", "clone", "--depth=1", "--no-single-branch", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    # Fetch all tags
+    subprocess.run(
+        ["git", "fetch", "--tags", "--depth=1"],
+        cwd=temp_dir,
+        capture_output=True,
+        check=True,
+        timeout=60,
+    )
+    
+    # Read current content
+    current_file = os.path.join(temp_dir, file_path)
+    with open(current_file) as f:
+        current_content = f.read()
+    
+    # Get all stable version tags with their dates
+    result = subprocess.run(
+        ["git", "tag", "-l", "v*", "--format=%(refname:short) %(creatordate:iso-strict)"],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    
+    all_tags = []
+    tag_dates = {}
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split(" ", 1)
+        if len(parts) != 2:
+            continue
+        tag, date = parts
+        # Match stable version tags:
+        # - Pure versions: v1.2.3, v1.2.3.4
+        # - Stable releases: v1.2.3-stable, v1.2.3-stable.model-name, etc.
+        # Exclude: -nightly, .rc, .dev variants
+        if re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?(-stable.*)?$', tag):
+            if '-nightly' not in tag and '.rc' not in tag and '.dev' not in tag:
+                all_tags.append(tag)
+                tag_dates[tag] = date
+    
+    # Sort tags by date (newest first for binary search)
+    # Using date is more accurate than version number because -stable.xxx patches
+    # may be released after newer base versions
+    all_tags.sort(key=lambda t: tag_dates.get(t, ""), reverse=True)
+    
+    _litellm_cache["temp_dir"] = temp_dir
+    _litellm_cache["tags"] = all_tags
+    _litellm_cache["tag_dates"] = tag_dates
+    _litellm_cache["current_content"] = current_content
+    
+    return _litellm_cache
+
+
+def cleanup_litellm_cache():
+    """Clean up the litellm repo cache."""
+    import shutil
+    if _litellm_cache["temp_dir"]:
+        shutil.rmtree(_litellm_cache["temp_dir"], ignore_errors=True)
+        _litellm_cache["temp_dir"] = None
+        _litellm_cache["tags"] = None
+        _litellm_cache["tag_dates"] = None
+        _litellm_cache["current_content"] = None
+
+
+def find_litellm_versions_supporting_model(model_id: str) -> list[str]:
+    """
+    Find all litellm versions (tags) that support the given model.
+
+    Scans recent tags to find versions that include the model.
+    Due to release branching, models may not appear monotonically across tags.
+    
+    Strategy: Scan the most recent 100 tags (covers ~6 months of releases),
+    which should be sufficient to find the first supporting version.
+
+    Args:
+        model_id: The language model ID to search for
+
+    Returns:
+        List of version tags that support the model (newest first by date)
+    """
+    import subprocess
+    
+    file_path = "model_prices_and_context_window.json"
+    
+    try:
+        cache = _get_litellm_repo()
+        temp_dir = cache["temp_dir"]
+        all_tags = cache["tags"]
+        current_content = cache["current_content"]
+        
+        # Check if model exists in current version
+        if not check_model_in_litellm_json(current_content, model_id):
+            return []
+        
+        if not all_tags:
+            return []
+        
+        # Scan through recent tags (sorted newest first by date)
+        # Limit to 100 most recent tags for performance
+        tags_to_check = all_tags[:100]
+        supporting_tags = []
+        
+        for tag in tags_to_check:
+            # Use git show to read file at tag (faster than checkout)
+            result = subprocess.run(
+                ["git", "show", f"{tag}:{file_path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode == 0 and check_model_in_litellm_json(result.stdout, model_id):
+                supporting_tags.append(tag)
+        
+        return supporting_tags
+        
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        print(f"Warning: Error searching litellm: {e}", file=sys.stderr)
+        return []
+
+
+def search_litellm_support(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first supported in a LiteLLM stable release.
+
+    Args:
+        model_id: The language model ID to search for
+
+    Returns:
+        ISO timestamp of the earliest LiteLLM version that supports the model
+    """
+    versions = find_litellm_versions_supporting_model(model_id)
+    if not versions:
+        return None
+    
+    cache = _get_litellm_repo()
+    tag_dates = cache["tag_dates"]
+    
+    # versions is sorted newest first, so the last one is the earliest
+    earliest_version = versions[-1]
+    return tag_dates.get(earliest_version)
+
+
+# Module-level cache for index results repo
+_index_results_cache = {
+    "temp_dir": None,
+}
+
+
+def _get_index_results_repo():
+    """Get or create the cached index results repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _index_results_cache["temp_dir"] is not None:
+        return _index_results_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/openhands-index-results.git"
+    else:
+        repo_url = "https://github.com/OpenHands/openhands-index-results.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="index_results_")
+    
+    # Clone the repo with filter for performance
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=180,
+    )
+    
+    _index_results_cache["temp_dir"] = temp_dir
+    
+    return _index_results_cache
+
+
+def cleanup_index_results_cache():
+    """Clean up the index results repo cache."""
+    import shutil
+    if _index_results_cache["temp_dir"]:
+        shutil.rmtree(_index_results_cache["temp_dir"], ignore_errors=True)
+        _index_results_cache["temp_dir"] = None
+
+
+def search_index_results_for_model(model_id: str) -> Optional[str]:
+    """
+    Search for when a model folder was added to openhands-index-results.
+    
+    Uses local git clone to find the first commit that added results for this model.
+
+    Args:
+        model_id: The language model ID to search for
+
+    Returns:
+        ISO timestamp of when the folder was created, or None if not found
+    """
+    import subprocess
+    
+    try:
+        cache = _get_index_results_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Check if the folder exists (case-insensitive search)
+        results_dir = os.path.join(temp_dir, "results")
+        if not os.path.exists(results_dir):
+            return None
+        
+        folder_name = None
+        for name in os.listdir(results_dir):
+            if model_id.lower() == name.lower():
+                folder_name = name
+                break
+        
+        if not folder_name:
+            return None
+        
+        # Get the first commit that added this folder using git log
+        result = subprocess.run(
+            ["git", "log", "--format=%aI", "--reverse", "--diff-filter=A", "--", f"results/{folder_name}"],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            dates = result.stdout.strip().split("\n")
+            if dates:
+                return dates[0]  # First commit (oldest)
+        
+        return None
+        
+    except Exception as e:
+        print(f"Warning: Error searching index results: {e}", file=sys.stderr)
+        return None
+
+
+# Keep old function for backwards compatibility (unused but referenced in tests)
+def search_index_results_folder(model_id: str) -> Optional[str]:
+    """Deprecated: Use search_index_results_for_model instead."""
+    return search_index_results_for_model(model_id)
+
+
+# Module-level cache for infra repo
+_infra_cache = {
+    "temp_dir": None,
+    "eval_proxy_history": None,  # List of (date, version) tuples, oldest first
+    "prod_proxy_history": None,
+}
+
+
+def _get_infra_repo():
+    """Get or create the cached infra repo clone."""
+    import subprocess
+    import tempfile
+    import re
+    
+    if _infra_cache["temp_dir"] is not None:
+        return _infra_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/All-Hands-AI/infra.git"
+    else:
+        repo_url = "https://github.com/All-Hands-AI/infra.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="infra_")
+    
+    # Clone the repo
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    
+    _infra_cache["temp_dir"] = temp_dir
+    
+    # Build version history for both proxy types
+    for proxy_type, path in [("eval_proxy", "k8s/evaluation/litellm.yaml"), 
+                              ("prod_proxy", "k8s/production/litellm.yaml")]:
+        history = []
+        
+        # Get all commits that modified this file, with dates
+        result = subprocess.run(
+            ["git", "log", "--format=%H %aI", "--follow", "--", path],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if result.returncode != 0:
+            _infra_cache[f"{proxy_type}_history"] = []
+            continue
+        
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append((parts[0], parts[1]))  # (sha, date)
+        
+        # Process commits oldest to newest
+        for sha, commit_date in reversed(commits):
+            # Get file content at this commit
+            result = subprocess.run(
+                ["git", "show", f"{sha}:{path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode != 0:
+                continue
+            
+            # Extract the litellm image tag
+            tag_match = re.search(r'tag:\s*["\']?(v[\d.]+[^"\'\s]*)', result.stdout)
+            if tag_match:
+                history.append((commit_date, tag_match.group(1)))
+        
+        _infra_cache[f"{proxy_type}_history"] = history
+    
+    return _infra_cache
+
+
+def cleanup_infra_cache():
+    """Clean up the infra repo cache."""
+    import shutil
+    if _infra_cache["temp_dir"]:
+        shutil.rmtree(_infra_cache["temp_dir"], ignore_errors=True)
+        _infra_cache["temp_dir"] = None
+        _infra_cache["eval_proxy_history"] = None
+        _infra_cache["prod_proxy_history"] = None
+
+
+def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str] = None) -> Optional[str]:
+    """
+    Search for when a litellm version supporting the model was deployed to infra.
+
+    This searches commit history for when any of the valid litellm versions
+    (that support the model) was first deployed to the specified environment.
 
     Args:
         model_id: The language model ID to search for
         proxy_type: Either "eval_proxy" or "prod_proxy"
+        valid_versions: List of litellm version tags that support the model.
+                       If None, returns None.
 
     Returns:
-        ISO timestamp of when the model was first supported, or None if not found
+        ISO timestamp of when a supporting version was first deployed, or None
     """
-    headers = get_github_headers()
-    repo = REPOS["infra"]
-    path = SEARCH_PATHS[proxy_type][0]
-
-    # Get commit history for the litellm.yaml file
-    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    all_commits = []
-    page = 1
-    max_pages = 10
-
-    while page <= max_pages:
-        params = {"path": path, "per_page": 100, "page": page}
-        try:
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-            if response.status_code != 200:
-                break
-            commits = response.json()
-            if not commits:
-                break
-            all_commits.extend(commits)
-            if len(commits) < 100:
-                break
-            page += 1
-        except requests.RequestException:
-            break
-
-    if not all_commits:
+    if valid_versions is None:
         return None
-
-    # Track which versions we've already checked to avoid redundant API calls
-    checked_versions: dict[str, bool] = {}
-
-    # Go through commits from oldest to newest
-    for commit in reversed(all_commits):
-        commit_sha = commit.get("sha")
-        commit_date = commit.get("commit", {}).get("author", {}).get("date")
-
-        if not commit_sha or not commit_date:
-            continue
-
-        # Fetch litellm.yaml at this commit
-        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{path}"
-        try:
-            file_response = requests.get(file_url, headers=headers, timeout=30)
-            if file_response.status_code != 200:
-                continue
-
-            yaml_content = file_response.text
-            version = extract_litellm_version_from_yaml(yaml_content)
-
-            if not version:
-                continue
-
-            # Check if we've already verified this version
-            if version in checked_versions:
-                if checked_versions[version]:
-                    return commit_date
-                continue
-
-            # Check if this litellm version supports the model
-            supports_model = check_litellm_version_supports_model(version, model_id)
-            checked_versions[version] = supports_model
-
-            if supports_model:
+    
+    try:
+        cache = _get_infra_repo()
+        history = cache.get(f"{proxy_type}_history", [])
+        
+        if not history:
+            return None
+        
+        # Convert to set for O(1) lookup
+        valid_set = set(valid_versions)
+        
+        # Find the earliest deployment of a valid version
+        for commit_date, deployed_version in history:
+            if deployed_version in valid_set:
                 return commit_date
-
-        except requests.RequestException:
-            continue
-
-    return None
-
+        
+        return None
+        
+    except Exception as e:
+        print(f"Warning: Error searching infra proxy: {e}", file=sys.stderr)
+        return None
 
 
 def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:
@@ -625,126 +853,6 @@ def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> 
         return timestamp
 
 
-def model_in_frontend_file(content: str, model_id: str) -> bool:
-    """
-    Check if a model ID appears in a frontend file as a complete identifier.
-    
-    Looks for the model as a quoted string (e.g., "model-name" or 'model-name')
-    to avoid false positives from substring matches.
-    
-    Args:
-        content: The file content (will be searched case-insensitively)
-        model_id: The model ID to search for
-        
-    Returns:
-        True if the model appears as a complete quoted identifier
-    """
-    model_lower = model_id.lower()
-    content_lower = content.lower()
-    
-    # Check for model as a quoted string: "model-name" or 'model-name'
-    if f'"{model_lower}"' in content_lower:
-        return True
-    if f"'{model_lower}'" in content_lower:
-        return True
-    
-    return False
-
-
-def search_model_in_file_history(
-    repo: str, file_path: str, model_id: str
-) -> Optional[str]:
-    """
-    Search for when a model first appeared in a file by checking commit history.
-
-    Goes through the commit history of the file from oldest to newest and finds
-    the first commit where the model ID appears in the file content as a complete
-    quoted identifier (to avoid substring false positives).
-
-    Args:
-        repo: Repository in format "owner/repo"
-        file_path: Path to the file to check
-        model_id: The language model ID to search for
-
-    Returns:
-        ISO timestamp of the first commit where model appears, or None if not found
-    """
-    headers = get_github_headers()
-
-    # Get commit history for the file
-    commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-    all_commits = []
-    page = 1
-    max_pages = 10
-
-    while page <= max_pages:
-        params = {"path": file_path, "per_page": 100, "page": page}
-        try:
-            response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-            if response.status_code != 200:
-                break
-            commits = response.json()
-            if not commits:
-                break
-            all_commits.extend(commits)
-            if len(commits) < 100:
-                break
-            page += 1
-        except requests.RequestException:
-            break
-
-    if not all_commits:
-        return None
-
-    # Go through commits from oldest to newest to find first appearance
-    for commit in reversed(all_commits):
-        commit_sha = commit.get("sha")
-        commit_date = commit.get("commit", {}).get("author", {}).get("date")
-
-        if not commit_sha or not commit_date:
-            continue
-
-        # Fetch file content at this commit
-        file_url = f"https://raw.githubusercontent.com/{repo}/{commit_sha}/{file_path}"
-        try:
-            file_response = requests.get(file_url, headers=headers, timeout=30)
-            if file_response.status_code == 200:
-                content = file_response.text
-
-                # Check if the model appears as a complete quoted identifier
-                if model_in_frontend_file(content, model_id):
-                    return commit_date
-        except requests.RequestException:
-            continue
-
-    return None
-
-
-def get_later_timestamp(timestamp1: Optional[str], timestamp2: Optional[str]) -> Optional[str]:
-    """
-    Return the later of two timestamps, or whichever is not None.
-
-    Args:
-        timestamp1: First ISO timestamp (or None)
-        timestamp2: Second ISO timestamp (or None)
-
-    Returns:
-        The later timestamp, or None if both are None
-    """
-    if timestamp1 is None:
-        return timestamp2
-    if timestamp2 is None:
-        return timestamp1
-
-    # Compare timestamps (ISO format strings are lexicographically comparable)
-    # Normalize to comparable format
-    def normalize(ts: str) -> str:
-        # Extract just the date and time parts for comparison
-        return ts.replace("+00:00", "Z").split(".")[0]
-
-    return timestamp1 if normalize(timestamp1) > normalize(timestamp2) else timestamp2
-
-
 def track_llm_support(model_id: str, release_date: str) -> dict:
     """
     Track when a language model was supported across OpenHands repositories.
@@ -768,54 +876,50 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     }
 
     # Search for upstream litellm support FIRST
-    # SDK support cannot be earlier than litellm support
+    # We need this before SDK since SDK falls back to litellm support
     print(f"Searching for {model_id} in BerriAI/litellm...")
-    litellm_timestamp = search_litellm_support(model_id)
+    valid_versions = find_litellm_versions_supporting_model(model_id)
+    
+    if valid_versions:
+        cache = _get_litellm_repo()
+        tag_dates = cache["tag_dates"]
+        earliest_version = valid_versions[-1]  # Last is earliest (sorted newest first)
+        litellm_timestamp = tag_dates.get(earliest_version)
+    else:
+        litellm_timestamp = None
+    
     result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
 
-    # Search for SDK-specific support (special handling added for this model)
-    # SDK support defaults to litellm support, but if there's SDK-specific work
-    # that happened later, use that later date
+    # Search for SDK support using local git clone
+    # If no SDK-specific features found, fall back to litellm support
+    # (SDK can use any model that litellm supports)
     print(f"Searching for {model_id} in software-agent-sdk...")
-    sdk_specific_timestamp = search_commits_for_model(
-        REPOS["sdk"], model_id, SEARCH_PATHS["sdk"]
-    )
-    sdk_specific_timestamp = adjust_timestamp_to_release(sdk_specific_timestamp, release_date)
+    sdk_timestamp = search_sdk_for_model(model_id)
+    if sdk_timestamp is None and litellm_timestamp is not None:
+        # Fall back to litellm support - SDK supports all litellm models
+        sdk_timestamp = litellm_timestamp
+    result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
 
-    # SDK support is the later of: litellm support or SDK-specific work
-    # If no SDK-specific work found, default to litellm support
-    if sdk_specific_timestamp is not None:
-        result["sdk_support_timestamp"] = get_later_timestamp(
-            result["litellm_support_timestamp"], sdk_specific_timestamp
-        )
-    else:
-        result["sdk_support_timestamp"] = result["litellm_support_timestamp"]
-
-    # Search for frontend support by checking file history
+    # Search for frontend support using local git clone
     print(f"Searching for {model_id} in OpenHands frontend...")
-    frontend_timestamp = search_model_in_file_history(
-        REPOS["frontend"], SEARCH_PATHS["frontend"][0], model_id
-    )
+    frontend_timestamp = search_frontend_for_model(model_id)
     result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
 
-    # Search for index results
+    # Search for index results using local git clone
     print(f"Searching for {model_id} in openhands-index-results...")
-    index_timestamp = search_index_results_folder(model_id)
+    index_timestamp = search_index_results_for_model(model_id)
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
-    # Search for eval proxy support by checking deployed litellm versions
+    # Search for eval proxy support
+    # Find when a litellm version that supports the model was first deployed
     print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
-    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy")
-    eval_proxy_timestamp = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
-    # Default to litellm support if no specific proxy deployment found
-    result["eval_proxy_timestamp"] = eval_proxy_timestamp or result["litellm_support_timestamp"]
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
+    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
 
-    # Search for prod proxy support by checking deployed litellm versions
+    # Search for prod proxy support
     print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
-    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy")
-    prod_proxy_timestamp = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
-    # Default to litellm support if no specific proxy deployment found
-    result["prod_proxy_timestamp"] = prod_proxy_timestamp or result["litellm_support_timestamp"]
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
+    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
 
     return result
 
@@ -836,6 +940,12 @@ def main():
         required=True,
         help="Release date of the model (ISO format, e.g., 2024-01-15)",
     )
+    parser.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="Output JSON file path",
+    )
 
     args = parser.parse_args()
 
@@ -849,6 +959,17 @@ def main():
 
     # Track LLM support
     result = track_llm_support(args.model_id, args.release_date)
+
+    # Ensure output directory exists
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Write output
+    with open(args.output, "w") as f:
+        json.dump(result, f, indent=2)
+
+    print(f"\nResults written to {args.output}")
     print(json.dumps(result, indent=2))
 
 

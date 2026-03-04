@@ -12,10 +12,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 from track_llm_support import (
     get_github_headers,
+    get_litellm_model_search_terms,
+    check_model_in_litellm_json,
     search_commits_for_model,
+    search_sdk_for_model,
+    search_frontend_for_model,
     search_index_results_folder,
+    search_index_results_for_model,
     search_infra_proxy,
     search_litellm_support,
+    find_litellm_versions_supporting_model,
     track_llm_support,
 )
 
@@ -93,169 +99,242 @@ class TestSearchCommitsForModel:
         assert result is None
 
 
-class TestSearchIndexResultsFolder:
-    """Tests for search_index_results_folder function."""
+class TestSearchIndexResultsForModel:
+    """Tests for search_index_results_for_model function."""
 
-    @patch("track_llm_support.requests.get")
-    def test_search_index_results_success(self, mock_get):
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_success(self, mock_get_repo):
         """Test successful index results folder search."""
-        # First call: get contents
-        contents_response = MagicMock()
-        contents_response.status_code = 200
-        contents_response.json.return_value = [
-            {"type": "dir", "name": "test-model"},
-            {"type": "dir", "name": "other-model"},
-        ]
+        import subprocess
+        
+        # Create a mock temp directory structure
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            os.makedirs(os.path.join(results_dir, "test-model"))
+            os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            # Mock subprocess.run to return a date
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stdout="2024-01-15T10:00:00Z\n2024-02-01T10:00:00Z\n"
+                )
+                
+                result = search_index_results_for_model("test-model")
+                assert result == "2024-01-15T10:00:00Z"
 
-        # Second call: get commits
-        commits_response = MagicMock()
-        commits_response.status_code = 200
-        commits_response.json.return_value = [
-            {"commit": {"author": {"date": "2024-02-01T10:00:00Z"}}},
-            {"commit": {"author": {"date": "2024-01-15T10:00:00Z"}}},
-        ]
-
-        mock_get.side_effect = [contents_response, commits_response]
-
-        result = search_index_results_folder("test-model")
-        assert result == "2024-01-15T10:00:00Z"
-
-    @patch("track_llm_support.requests.get")
-    def test_search_index_results_folder_not_found(self, mock_get):
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_folder_not_found(self, mock_get_repo):
         """Test index results search when folder is not found."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"type": "dir", "name": "other-model"},
-        ]
-        mock_get.return_value = mock_response
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            result = search_index_results_for_model("nonexistent-model")
+            assert result is None
 
-        result = search_index_results_folder("nonexistent-model")
-        assert result is None
+
+class TestGetLitellmModelSearchTerms:
+    """Tests for get_litellm_model_search_terms function."""
+
+    def test_basic_model_id(self):
+        """Test basic model ID returns lowercase version."""
+        terms = get_litellm_model_search_terms("test-model")
+        assert terms == ["test-model"]
+
+    def test_model_with_alias(self):
+        """Test model with defined alias returns alias."""
+        terms = get_litellm_model_search_terms("DeepSeek-V3.2-Reasoner")
+        # Uses versioned name to avoid matching older unversioned deepseek-reasoner
+        assert terms == ["deepseek/deepseek-v3.2"]
+
+    def test_glm5_alias(self):
+        """Test GLM-5 returns correct litellm name."""
+        terms = get_litellm_model_search_terms("GLM-5")
+        assert terms == ["zai/glm-5"]
+
+    def test_model_without_alias(self):
+        """Test model without alias returns lowercase original."""
+        terms = get_litellm_model_search_terms("claude-sonnet-4-5")
+        assert terms == ["claude-sonnet-4-5"]
+
+
+class TestCheckModelInLitellmJson:
+    """Tests for check_model_in_litellm_json function."""
+
+    def test_model_as_json_key(self):
+        """Test finding model as a JSON key."""
+        content = '{"test-model": {"price": 0.01}, "other": {}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
+
+    def test_model_with_provider_prefix(self):
+        """Test finding model with provider prefix like openai/gpt-4."""
+        content = '{"openai/test-model": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
+
+    def test_model_not_found(self):
+        """Test when model is not in the JSON."""
+        content = '{"other-model": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is False
+
+    def test_partial_match_rejected(self):
+        """Test that partial matches in values are rejected."""
+        # Model appears in a value, not as a key
+        content = '{"model": {"name": "test-model-v2"}}'
+        assert check_model_in_litellm_json(content, "test-model") is False
+
+    def test_case_insensitive(self):
+        """Test case-insensitive matching."""
+        content = '{"TEST-MODEL": {"price": 0.01}}'
+        assert check_model_in_litellm_json(content, "test-model") is True
 
 
 class TestSearchLitellmSupport:
     """Tests for search_litellm_support function."""
 
-    @patch("track_llm_support.requests.get")
-    def test_search_litellm_success(self, mock_get):
-        """Test successful litellm search using binary search through commits."""
-        def mock_response_factory(*args, **kwargs):
-            url = args[0] if args else kwargs.get('url', '')
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            
-            if 'raw.githubusercontent.com' in url:
-                # Return file content with the model
-                mock_response.text = '{"test-model": {"price": 0.01}}'
-            elif '/commits' in url:
-                # Return list of commits
-                mock_response.json.return_value = [
-                    {"sha": "abc123", "commit": {"author": {"date": "2024-01-15T10:00:00Z"}}},
-                    {"sha": "def456", "commit": {"author": {"date": "2024-01-10T10:00:00Z"}}},
-                ]
-            return mock_response
+    def test_tag_version_filter(self):
+        """Test that the tag filter correctly identifies stable versions."""
+        import re
         
-        mock_get.side_effect = mock_response_factory
+        tags = [
+            "v1.81.13",                              # Stable - should match
+            "v1.80.0",                               # Stable - should match
+            "v1.79.0",                               # Stable - should match
+            "v1.0.0",                                # Stable - should match
+            "v1.81.9-stable",                        # Stable release - should match
+            "v1.81.9-stable.gemini.3.1-pro",         # Stable release - should match
+            "v1.81.3-stable.sonnet-4-6",             # Stable release - should match
+            "v1.80.1-nightly",                       # Non-stable - should NOT match
+            "v1.79.0-rc.1",                          # Non-stable - should NOT match
+            "v1.78.0.dev1",                          # Non-stable - should NOT match
+            "v1.81.9.rc.1",                          # Non-stable - should NOT match
+            "v1.81.7.dev1",                          # Non-stable - should NOT match
+        ]
+        
+        def is_stable(tag):
+            if not re.match(r'^v\d+\.\d+(\.\d+)?(\.\d+)?(-stable.*)?$', tag):
+                return False
+            return '-nightly' not in tag and '.rc' not in tag and '.dev' not in tag
+        
+        stable_tags = [t for t in tags if is_stable(t)]
+        
+        assert "v1.81.13" in stable_tags
+        assert "v1.80.0" in stable_tags
+        assert "v1.79.0" in stable_tags
+        assert "v1.0.0" in stable_tags
+        assert "v1.81.9-stable" in stable_tags
+        assert "v1.81.9-stable.gemini.3.1-pro" in stable_tags
+        assert "v1.81.3-stable.sonnet-4-6" in stable_tags
+        assert "v1.80.1-nightly" not in stable_tags
+        assert "v1.79.0-rc.1" not in stable_tags
+        assert "v1.78.0.dev1" not in stable_tags
+        assert "v1.81.9.rc.1" not in stable_tags
 
-        result = search_litellm_support("test-model")
-        # Should find the model in the oldest commit checked
-        assert result is not None
+    def test_version_sorting(self):
+        """Test that version tags are sorted correctly (newest first)."""
+        tags = ["v1.0.0", "v1.80.0", "v1.81.13", "v1.79.0", "v1.9.0"]
+        
+        def version_key(tag):
+            try:
+                parts = tag[1:].split(".")
+                return tuple(int(p) for p in parts)
+            except ValueError:
+                return (0,)
+        
+        sorted_tags = sorted(tags, key=version_key, reverse=True)
+        
+        assert sorted_tags[0] == "v1.81.13"
+        assert sorted_tags[1] == "v1.80.0"
+        assert sorted_tags[-1] == "v1.0.0"
 
-    @patch("track_llm_support.requests.get")
-    def test_search_litellm_not_found(self, mock_get):
-        """Test litellm search when model is not found in current version."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = '{"other-model": {"price": 0.01}}'  # Model not in file
-        mock_get.return_value = mock_response
-
-        result = search_litellm_support("nonexistent-model")
-        assert result is None
+    def test_search_litellm_nonexistent_model(self):
+        """Test that searching for a nonexistent model returns None quickly."""
+        # This test uses check_model_in_litellm_json which is the first filter
+        result = check_model_in_litellm_json('{"other-model": {}}', "nonexistent-model-xyz")
+        assert result is False
 
 
 class TestSearchInfraProxy:
     """Tests for search_infra_proxy function."""
 
-    @patch("track_llm_support.requests.get")
-    def test_search_eval_proxy_success(self, mock_get):
-        """Test successful eval proxy search."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        # The new implementation uses commits API which returns a list of commits
-        mock_response.json.return_value = [
-            {
-                "commit": {
-                    "message": "Add test-model to eval proxy",
-                    "author": {"date": "2024-01-15T10:00:00Z"}
-                }
-            },
-            {
-                "commit": {
-                    "message": "Initial commit",
-                    "author": {"date": "2024-01-10T10:00:00Z"}
-                }
-            }
-        ]
-        mock_get.return_value = mock_response
-
-        result = search_infra_proxy("test-model", "eval_proxy")
-        assert result == "2024-01-15T10:00:00Z"
-
-    @patch("track_llm_support.requests.get")
-    def test_search_prod_proxy_not_found(self, mock_get):
-        """Test prod proxy search when model is not found and no wildcards match."""
-        import base64
+    @patch("track_llm_support._get_infra_repo")
+    def test_search_eval_proxy_success(self, mock_get_repo):
+        """Test successful eval proxy search with valid versions."""
+        # Mock the infra cache with version history
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.79.0"),  # oldest, has valid version
+                ("2024-01-15T10:00:00Z", "v1.80.0-stable"),
+            ],
+            "prod_proxy_history": [],
+        }
         
-        def mock_response_factory(*args, **kwargs):
-            url = args[0] if args else kwargs.get('url', '')
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            
-            if '/commits' in url:
-                # Return commits that don't mention the model
-                mock_response.json.return_value = [
-                    {
-                        "commit": {
-                            "message": "Add other-model to prod proxy",
-                            "author": {"date": "2024-01-15T10:00:00Z"}
-                        }
-                    }
-                ]
-            elif '/contents' in url:
-                # Return file content without any wildcards
-                mock_response.json.return_value = {
-                    "content": base64.b64encode(b"model_list: []").decode()
-                }
-            return mock_response
+        # Valid versions that support the model
+        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
         
-        mock_get.side_effect = mock_response_factory
+        result = search_infra_proxy("test-model", "eval_proxy", valid_versions)
+        assert result == "2024-01-10T10:00:00Z"  # Earliest commit with valid version
 
-        result = search_infra_proxy("nonexistent-model", "prod_proxy")
+    @patch("track_llm_support._get_infra_repo")
+    def test_search_prod_proxy_not_found(self, mock_get_repo):
+        """Test prod proxy search when no valid versions were deployed."""
+        # Mock the infra cache with version history that doesn't match
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [],
+            "prod_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.70.0"),  # Not in valid versions
+                ("2024-01-15T10:00:00Z", "v1.71.0"),
+            ],
+        }
+        
+        # Valid versions that don't match what's deployed
+        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
+        
+        result = search_infra_proxy("test-model", "prod_proxy", valid_versions)
+        assert result is None
+    
+    def test_search_infra_proxy_no_valid_versions(self):
+        """Test that None is returned when valid_versions is None."""
+        result = search_infra_proxy("test-model", "eval_proxy", None)
         assert result is None
 
 
 class TestTrackLlmSupport:
     """Tests for track_llm_support function."""
 
-    @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support._get_litellm_repo")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
-    @patch("track_llm_support.search_index_results_folder")
-    @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
-        mock_search_commits.side_effect = [
-            "2024-01-20T10:00:00Z",  # SDK
-            "2024-01-25T10:00:00Z",  # Frontend
-        ]
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
         mock_search_infra.side_effect = [
             "2024-02-01T10:00:00Z",  # Eval proxy
             "2024-02-03T10:00:00Z",  # Prod proxy
         ]
-        mock_search_litellm.return_value = "2024-01-18T10:00:00Z"
+        # Mock litellm versions - returns list of versions (newest first)
+        mock_find_versions.return_value = ["v1.81.0", "v1.80.0", "v1.79.0"]
+        mock_get_repo.return_value = {
+            "tag_dates": {
+                "v1.81.0": "2024-01-25T10:00:00Z",
+                "v1.80.0": "2024-01-20T10:00:00Z",
+                "v1.79.0": "2024-01-18T10:00:00Z",  # Earliest
+            }
+        }
 
         result = track_llm_support("test-model", "2024-01-15")
 
@@ -268,21 +347,20 @@ class TestTrackLlmSupport:
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
         assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
-    @patch("track_llm_support.search_litellm_support")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
-    @patch("track_llm_support.search_index_results_folder")
-    @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_commits, mock_search_index, mock_search_infra, mock_search_litellm
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, mock_find_versions
     ):
         """Test tracking when model is only found in some repositories."""
-        mock_search_commits.side_effect = [
-            "2024-01-20T10:00:00Z",  # SDK
-            None,  # Frontend
-        ]
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
+        mock_search_frontend.return_value = None  # Frontend
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
-        mock_search_litellm.return_value = None
+        mock_find_versions.return_value = []  # No litellm versions support this model
 
         result = track_llm_support("test-model", "2024-01-15")
 
