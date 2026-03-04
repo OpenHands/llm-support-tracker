@@ -119,8 +119,17 @@ def main():
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n{'='*60}")
-    print(f"Results written to {output_file}")
+    # Copy to frontend public folder to keep in sync
+    frontend_file = os.path.join(os.path.dirname(script_dir), "frontend", "public", "all_models.json")
+    if os.path.exists(os.path.dirname(frontend_file)):
+        import shutil
+        shutil.copy(output_file, frontend_file)
+        print(f"\n{'='*60}")
+        print(f"Results written to {output_file}")
+        print(f"Synced to {frontend_file}")
+    else:
+        print(f"\n{'='*60}")
+        print(f"Results written to {output_file}")
     print(f"Total models processed: {len(results)}")
 
 
