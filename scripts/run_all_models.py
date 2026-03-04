@@ -45,7 +45,7 @@ MODEL_RELEASE_DATES = {
     # NVIDIA Nemotron models
     "Nemotron-3-Nano": "2025-10-01",
     # Alibaba Qwen models
-    "Qwen3-Coder-480B": "2025-12-01",
+    "Qwen3-Coder-480B": "2025-07-23",  # Announced July 23, 2025
     "Qwen3-Coder-Next": "2026-01-15",
     # Anthropic Claude models
     "claude-opus-4-5": "2025-11-24",

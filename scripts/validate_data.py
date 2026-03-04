@@ -6,6 +6,7 @@ Rules:
 - Required fields: model_id, release_date, tier
 - tier must be 1 or 2
 - Timestamps should be valid ISO format
+- No support timestamps before release date (can't support a model before it exists)
 - Proxy support must not be before litellm support (proxy deploys litellm versions)
 """
 
@@ -126,6 +127,48 @@ def validate_proxy_after_litellm(model: dict) -> list[str]:
     return errors
 
 
+def validate_timestamps_after_release(model: dict) -> list[str]:
+    """
+    Validate that no support timestamps come before the model's release date.
+    
+    A model cannot be supported before it exists.
+    
+    Returns a list of error messages (empty if valid).
+    """
+    errors = []
+    model_id = model.get("model_id", "unknown")
+    release_date = model.get("release_date")
+    
+    if not release_date:
+        return errors
+    
+    release_dt = parse_timestamp(release_date)
+    if release_dt is None:
+        return errors
+    
+    timestamp_fields = [
+        "sdk_support_timestamp",
+        "frontend_support_timestamp",
+        "index_results_timestamp",
+        "eval_proxy_timestamp",
+        "prod_proxy_timestamp",
+        "litellm_support_timestamp",
+    ]
+    
+    for field in timestamp_fields:
+        value = model.get(field)
+        if value is None:
+            continue
+        
+        ts = parse_timestamp(value)
+        if ts is not None and ts < release_dt:
+            errors.append(
+                f"{model_id}: {field} ({value}) is before release_date ({release_date})"
+            )
+    
+    return errors
+
+
 def validate_data(data_file: Path) -> list[str]:
     """
     Validate all models in the data file.
@@ -139,6 +182,7 @@ def validate_data(data_file: Path) -> list[str]:
     for model in models:
         all_errors.extend(validate_required_fields(model))
         all_errors.extend(validate_timestamp_formats(model))
+        all_errors.extend(validate_timestamps_after_release(model))
         all_errors.extend(validate_proxy_after_litellm(model))
     
     return all_errors
