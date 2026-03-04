@@ -9,7 +9,7 @@ This repository tracks when language models are supported across the OpenHands e
 
 ### Running the Script for All Models
 
-The recommended way to track all models is to use the `run_all_models.py` script, which outputs a single `data/all_models.json` file:
+The recommended way to track all models is to use the `run_all_models.py` script, which outputs directly to `frontend/public/all_models.json`:
 
 ```bash
 python scripts/run_all_models.py
@@ -34,7 +34,7 @@ python scripts/track_llm_support.py \
 
 ### Output Format
 
-The `data/all_models.json` file contains an array of model support data:
+The `frontend/public/all_models.json` file contains an array of model support data:
 
 ```json
 [

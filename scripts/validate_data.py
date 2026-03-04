@@ -153,7 +153,7 @@ def main():
     parser.add_argument(
         "--data-file",
         type=Path,
-        help="Path to data file (default: data/all_models.json)",
+        help="Path to data file (default: frontend/public/all_models.json)",
     )
     args = parser.parse_args()
 
@@ -162,7 +162,7 @@ def main():
         data_file = args.data_file
     else:
         script_dir = Path(__file__).parent
-        data_file = script_dir.parent / "data" / "all_models.json"
+        data_file = script_dir.parent / "frontend" / "public" / "all_models.json"
     
     if not data_file.exists():
         print(f"Error: Data file not found: {data_file}")
