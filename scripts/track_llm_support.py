@@ -110,6 +110,8 @@ def search_commits_for_model(
         ISO timestamp of the first commit mentioning the model, or None if not found
     """
     headers = get_github_headers()
+    # Commit search requires a special Accept header
+    headers["Accept"] = "application/vnd.github.cloak-preview+json"
     search_url = f"{GITHUB_API_BASE}/search/commits"
     
     # Get all search terms for this model
@@ -292,6 +294,104 @@ def search_sdk_for_model(model_id: str) -> Optional[str]:
         
     except Exception as e:
         print(f"Warning: Error searching SDK: {e}", file=sys.stderr)
+        return None
+
+
+# Module-level cache for frontend repo
+_frontend_cache = {
+    "temp_dir": None,
+}
+
+
+def _get_frontend_repo():
+    """Get or create the cached frontend repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _frontend_cache["temp_dir"] is not None:
+        return _frontend_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/OpenHands.git"
+    else:
+        repo_url = "https://github.com/OpenHands/OpenHands.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="frontend_")
+    
+    # Clone the repo with filter for performance
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=180,
+    )
+    
+    _frontend_cache["temp_dir"] = temp_dir
+    
+    return _frontend_cache
+
+
+def cleanup_frontend_cache():
+    """Clean up the frontend repo cache."""
+    import shutil
+    if _frontend_cache["temp_dir"]:
+        shutil.rmtree(_frontend_cache["temp_dir"], ignore_errors=True)
+        _frontend_cache["temp_dir"] = None
+
+
+def search_frontend_for_model(model_id: str) -> Optional[str]:
+    """
+    Search for when a model was first added to the frontend.
+    
+    Uses git log -G to find the first commit that introduced the model name
+    in verified-models.ts.
+    
+    Args:
+        model_id: The language model ID to search for
+        
+    Returns:
+        ISO timestamp of when the model was first added, or None
+    """
+    import subprocess
+    import re
+    
+    try:
+        cache = _get_frontend_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Get search terms for this model
+        search_terms = get_model_search_terms(model_id)
+        
+        earliest_date = None
+        
+        # Search in verified-models.ts
+        search_path = "frontend/src/utils/verified-models.ts"
+        
+        for term in search_terms:
+            # Escape regex special chars
+            escaped_term = re.escape(term)
+            
+            # Use git log -G to find when term was added
+            result = subprocess.run(
+                ["git", "log", "-G", escaped_term, "--format=%aI", "--reverse", "--", search_path],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                dates = result.stdout.strip().split("\n")
+                if dates:
+                    commit_date = dates[0]  # First commit (oldest)
+                    if earliest_date is None or commit_date < earliest_date:
+                        earliest_date = commit_date
+        
+        return earliest_date
+        
+    except Exception as e:
+        print(f"Warning: Error searching frontend: {e}", file=sys.stderr)
         return None
 
 
@@ -478,9 +578,54 @@ def search_litellm_support(model_id: str) -> Optional[str]:
     return tag_dates.get(earliest_version)
 
 
-def search_index_results_folder(model_id: str) -> Optional[str]:
+# Module-level cache for index results repo
+_index_results_cache = {
+    "temp_dir": None,
+}
+
+
+def _get_index_results_repo():
+    """Get or create the cached index results repo clone."""
+    import subprocess
+    import tempfile
+    
+    if _index_results_cache["temp_dir"] is not None:
+        return _index_results_cache
+    
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        repo_url = f"https://{token}@github.com/OpenHands/openhands-index-results.git"
+    else:
+        repo_url = "https://github.com/OpenHands/openhands-index-results.git"
+    
+    temp_dir = tempfile.mkdtemp(prefix="index_results_")
+    
+    # Clone the repo with filter for performance
+    subprocess.run(
+        ["git", "clone", "--filter=blob:none", repo_url, temp_dir],
+        capture_output=True,
+        check=True,
+        timeout=180,
+    )
+    
+    _index_results_cache["temp_dir"] = temp_dir
+    
+    return _index_results_cache
+
+
+def cleanup_index_results_cache():
+    """Clean up the index results repo cache."""
+    import shutil
+    if _index_results_cache["temp_dir"]:
+        shutil.rmtree(_index_results_cache["temp_dir"], ignore_errors=True)
+        _index_results_cache["temp_dir"] = None
+
+
+def search_index_results_for_model(model_id: str) -> Optional[str]:
     """
     Search for when a model folder was added to openhands-index-results.
+    
+    Uses local git clone to find the first commit that added results for this model.
 
     Args:
         model_id: The language model ID to search for
@@ -488,49 +633,51 @@ def search_index_results_folder(model_id: str) -> Optional[str]:
     Returns:
         ISO timestamp of when the folder was created, or None if not found
     """
-    headers = get_github_headers()
-    repo = REPOS["index_results"]
-
-    # First, check if the folder exists
-    contents_url = f"{GITHUB_API_BASE}/repos/{repo}/contents/results"
-
+    import subprocess
+    
     try:
-        response = requests.get(contents_url, headers=headers, timeout=30)
-        if response.status_code != 200:
+        cache = _get_index_results_repo()
+        temp_dir = cache["temp_dir"]
+        
+        # Check if the folder exists (case-insensitive search)
+        results_dir = os.path.join(temp_dir, "results")
+        if not os.path.exists(results_dir):
             return None
-
-        contents = response.json()
+        
         folder_name = None
-
-        # Find the folder that matches the model ID (case-insensitive)
-        for item in contents:
-            if item.get("type") == "dir":
-                name = item.get("name", "")
-                if model_id.lower() == name.lower():
-                    folder_name = name
-                    break
-
+        for name in os.listdir(results_dir):
+            if model_id.lower() == name.lower():
+                folder_name = name
+                break
+        
         if not folder_name:
             return None
-
-        # Get the first commit that added this folder
-        commits_url = f"{GITHUB_API_BASE}/repos/{repo}/commits"
-        params = {"path": f"results/{folder_name}", "per_page": 100}
-
-        response = requests.get(commits_url, headers=headers, params=params, timeout=30)
-        if response.status_code != 200:
-            return None
-
-        commits = response.json()
-        if commits:
-            # Get the oldest commit (last in the list)
-            oldest_commit = commits[-1]
-            return oldest_commit.get("commit", {}).get("author", {}).get("date")
-
-    except requests.RequestException as e:
+        
+        # Get the first commit that added this folder using git log
+        result = subprocess.run(
+            ["git", "log", "--format=%aI", "--reverse", "--diff-filter=A", "--", f"results/{folder_name}"],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            dates = result.stdout.strip().split("\n")
+            if dates:
+                return dates[0]  # First commit (oldest)
+        
+        return None
+        
+    except Exception as e:
         print(f"Warning: Error searching index results: {e}", file=sys.stderr)
+        return None
 
-    return None
+
+# Keep old function for backwards compatibility (unused but referenced in tests)
+def search_index_results_folder(model_id: str) -> Optional[str]:
+    """Deprecated: Use search_index_results_for_model instead."""
+    return search_index_results_for_model(model_id)
 
 
 # Module-level cache for infra repo
@@ -735,25 +882,8 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "litellm_support_timestamp": None,
     }
 
-    # Search for SDK support using local git clone
-    print(f"Searching for {model_id} in software-agent-sdk...")
-    sdk_timestamp = search_sdk_for_model(model_id)
-    result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
-
-    # Search for frontend support
-    print(f"Searching for {model_id} in OpenHands frontend...")
-    frontend_timestamp = search_commits_for_model(
-        REPOS["frontend"], model_id, SEARCH_PATHS["frontend"]
-    )
-    result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
-
-    # Search for index results
-    print(f"Searching for {model_id} in openhands-index-results...")
-    index_timestamp = search_index_results_folder(model_id)
-    result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
-
     # Search for upstream litellm support FIRST
-    # We need to find which versions support the model before searching proxy
+    # We need this before SDK since SDK falls back to litellm support
     print(f"Searching for {model_id} in BerriAI/litellm...")
     valid_versions = find_litellm_versions_supporting_model(model_id)
     
@@ -766,6 +896,26 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         litellm_timestamp = None
     
     result["litellm_support_timestamp"] = adjust_timestamp_to_release(litellm_timestamp, release_date)
+
+    # Search for SDK support using local git clone
+    # If no SDK-specific features found, fall back to litellm support
+    # (SDK can use any model that litellm supports)
+    print(f"Searching for {model_id} in software-agent-sdk...")
+    sdk_timestamp = search_sdk_for_model(model_id)
+    if sdk_timestamp is None and litellm_timestamp is not None:
+        # Fall back to litellm support - SDK supports all litellm models
+        sdk_timestamp = litellm_timestamp
+    result["sdk_support_timestamp"] = adjust_timestamp_to_release(sdk_timestamp, release_date)
+
+    # Search for frontend support using local git clone
+    print(f"Searching for {model_id} in OpenHands frontend...")
+    frontend_timestamp = search_frontend_for_model(model_id)
+    result["frontend_support_timestamp"] = adjust_timestamp_to_release(frontend_timestamp, release_date)
+
+    # Search for index results using local git clone
+    print(f"Searching for {model_id} in openhands-index-results...")
+    index_timestamp = search_index_results_for_model(model_id)
+    result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
 
     # Search for eval proxy support
     # Find when a litellm version that supports the model was first deployed

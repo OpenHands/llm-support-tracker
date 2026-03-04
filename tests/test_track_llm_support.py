@@ -16,7 +16,9 @@ from track_llm_support import (
     check_model_in_litellm_json,
     search_commits_for_model,
     search_sdk_for_model,
+    search_frontend_for_model,
     search_index_results_folder,
+    search_index_results_for_model,
     search_infra_proxy,
     search_litellm_support,
     find_litellm_versions_supporting_model,
@@ -97,45 +99,45 @@ class TestSearchCommitsForModel:
         assert result is None
 
 
-class TestSearchIndexResultsFolder:
-    """Tests for search_index_results_folder function."""
+class TestSearchIndexResultsForModel:
+    """Tests for search_index_results_for_model function."""
 
-    @patch("track_llm_support.requests.get")
-    def test_search_index_results_success(self, mock_get):
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_success(self, mock_get_repo):
         """Test successful index results folder search."""
-        # First call: get contents
-        contents_response = MagicMock()
-        contents_response.status_code = 200
-        contents_response.json.return_value = [
-            {"type": "dir", "name": "test-model"},
-            {"type": "dir", "name": "other-model"},
-        ]
+        import subprocess
+        
+        # Create a mock temp directory structure
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            os.makedirs(os.path.join(results_dir, "test-model"))
+            os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            # Mock subprocess.run to return a date
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stdout="2024-01-15T10:00:00Z\n2024-02-01T10:00:00Z\n"
+                )
+                
+                result = search_index_results_for_model("test-model")
+                assert result == "2024-01-15T10:00:00Z"
 
-        # Second call: get commits
-        commits_response = MagicMock()
-        commits_response.status_code = 200
-        commits_response.json.return_value = [
-            {"commit": {"author": {"date": "2024-02-01T10:00:00Z"}}},
-            {"commit": {"author": {"date": "2024-01-15T10:00:00Z"}}},
-        ]
-
-        mock_get.side_effect = [contents_response, commits_response]
-
-        result = search_index_results_folder("test-model")
-        assert result == "2024-01-15T10:00:00Z"
-
-    @patch("track_llm_support.requests.get")
-    def test_search_index_results_folder_not_found(self, mock_get):
+    @patch("track_llm_support._get_index_results_repo")
+    def test_search_index_results_folder_not_found(self, mock_get_repo):
         """Test index results search when folder is not found."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"type": "dir", "name": "other-model"},
-        ]
-        mock_get.return_value = mock_response
-
-        result = search_index_results_folder("nonexistent-model")
-        assert result is None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            results_dir = os.path.join(temp_dir, "results")
+            os.makedirs(results_dir)
+            os.makedirs(os.path.join(results_dir, "other-model"))
+            
+            mock_get_repo.return_value = {"temp_dir": temp_dir}
+            
+            result = search_index_results_for_model("nonexistent-model")
+            assert result is None
 
 
 class TestGetLitellmModelSearchTerms:
@@ -309,16 +311,16 @@ class TestTrackLlmSupport:
     @patch("track_llm_support._get_litellm_repo")
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
-    @patch("track_llm_support.search_index_results_folder")
-    @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_sdk, mock_search_commits, mock_search_index, mock_search_infra, 
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
-        mock_search_commits.return_value = "2024-01-25T10:00:00Z"  # Frontend
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
         mock_search_infra.side_effect = [
             "2024-02-01T10:00:00Z",  # Eval proxy
@@ -347,15 +349,15 @@ class TestTrackLlmSupport:
 
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
-    @patch("track_llm_support.search_index_results_folder")
-    @patch("track_llm_support.search_commits_for_model")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_sdk, mock_search_commits, mock_search_index, mock_search_infra, mock_find_versions
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, mock_find_versions
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
-        mock_search_commits.return_value = None  # Frontend
+        mock_search_frontend.return_value = None  # Frontend
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
         mock_find_versions.return_value = []  # No litellm versions support this model
