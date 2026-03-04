@@ -26,10 +26,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/run_all_models.py
 
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add frontend/public/all_models.json
-          git diff --staged --quiet || git commit -m "Update LLM support data"
-          git push
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update LLM support data"
+          title: "chore: update LLM support data"
+          body: |
+            This PR updates the LLM support tracking data.
+            
+            Generated automatically by the Track LLM Support workflow.
+          branch: update-llm-support-data
+          delete-branch: true
+          add-paths: |
+            frontend/public/all_models.json
