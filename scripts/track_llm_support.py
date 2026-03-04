@@ -922,7 +922,51 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         cache = _get_litellm_repo()
         tag_dates = cache["tag_dates"]
         earliest_version = valid_versions[-1]  # Last is earliest (sorted newest first)
-        litellm_timestamp = tag_dates.get(earliest_version)
+        official_litellm_timestamp = tag_dates.get(earliest_version)
+    else:
+        official_litellm_timestamp = None
+
+    # Search for eval proxy support
+    # Find when a litellm version that supports the model was first deployed
+    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
+    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
+
+    # Search for prod proxy support
+    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
+    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
+
+    # Compute litellm_support_timestamp as the earliest of:
+    # 1. Official LiteLLM support (from BerriAI/litellm)
+    # 2. Eval proxy (model in k8s/evaluation/litellm.yaml)
+    # 3. Prod proxy (model in k8s/production/litellm.yaml)
+    # This is because if a model is in our proxy configs, we can use it via litellm
+    litellm_candidates = [
+        official_litellm_timestamp,
+        eval_proxy_timestamp,
+        prod_proxy_timestamp,
+    ]
+    litellm_candidates = [t for t in litellm_candidates if t is not None]
+    if litellm_candidates:
+        # Parse and find earliest
+        from datetime import datetime
+        def parse_ts(ts):
+            # Handle various formats
+            for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
+                try:
+                    return datetime.strptime(ts.replace("Z", "+00:00") if "Z" in ts else ts, fmt)
+                except ValueError:
+                    continue
+            return None
+        
+        parsed = [(t, parse_ts(t)) for t in litellm_candidates]
+        parsed = [(t, p) for t, p in parsed if p is not None]
+        if parsed:
+            earliest = min(parsed, key=lambda x: x[1])
+            litellm_timestamp = earliest[0]
+        else:
+            litellm_timestamp = None
     else:
         litellm_timestamp = None
     
@@ -947,17 +991,6 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in openhands-index-results...")
     index_timestamp = search_index_results_for_model(model_id)
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
-
-    # Search for eval proxy support
-    # Find when a litellm version that supports the model was first deployed
-    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
-    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
-    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
-
-    # Search for prod proxy support
-    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
-    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
-    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
 
     return result
 
