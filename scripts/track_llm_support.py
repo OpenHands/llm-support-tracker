@@ -1000,11 +1000,12 @@ def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str]
     """
     Search for when a model was first usable via the infra proxy.
 
-    This searches for two things:
-    1. When the model name first appeared directly in the proxy config
-    2. When a litellm version supporting the model was first deployed
+    A model is only considered supported when BOTH conditions are met:
+    1. The model name appears directly in the proxy config, AND
+    2. A litellm version supporting the model is deployed
     
-    Returns the earlier of the two dates.
+    Returns the later of the two dates (when both conditions became true).
+    If either condition is not met, returns None.
 
     Args:
         model_id: The language model ID to search for
@@ -1013,16 +1014,13 @@ def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str]
                        Can be None if no official litellm support yet.
 
     Returns:
-        ISO timestamp of when the model became usable, or None
+        ISO timestamp of when the model became usable (both conditions met), or None
     """
-    timestamps = []
-    
     # Method 1: Check if model name appears directly in config
     model_name_timestamp = search_infra_proxy_for_model_name(model_id, proxy_type)
-    if model_name_timestamp:
-        timestamps.append(model_name_timestamp)
     
     # Method 2: Check for litellm version deployment (if we have valid versions)
+    litellm_version_timestamp = None
     if valid_versions:
         try:
             cache = _get_infra_repo()
@@ -1032,19 +1030,16 @@ def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str]
                 valid_set = set(valid_versions)
                 for commit_date, deployed_version in history:
                     if deployed_version in valid_set:
-                        timestamps.append(commit_date)
+                        litellm_version_timestamp = commit_date
                         break
         except Exception as e:
             print(f"Warning: Error searching infra proxy history: {e}", file=sys.stderr)
     
-    if not timestamps:
+    # BOTH conditions must be met (AND logic)
+    if model_name_timestamp is None or litellm_version_timestamp is None:
         return None
     
-    # Return the earliest timestamp
-    if len(timestamps) == 1:
-        return timestamps[0]
-    
-    # Parse and compare
+    # Return the later timestamp (when both conditions became true)
     from datetime import datetime
     def parse_ts(ts):
         for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
@@ -1054,13 +1049,16 @@ def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str]
                 continue
         return None
     
-    parsed = [(t, parse_ts(t)) for t in timestamps]
-    parsed = [(t, p) for t, p in parsed if p is not None]
-    if parsed:
-        earliest = min(parsed, key=lambda x: x[1])
-        return earliest[0]
+    parsed_model = parse_ts(model_name_timestamp)
+    parsed_version = parse_ts(litellm_version_timestamp)
     
-    return timestamps[0]
+    if parsed_model is None or parsed_version is None:
+        # Fallback: return model name timestamp if we can't parse
+        return model_name_timestamp
+    
+    # Return the later of the two (max) - both must be satisfied
+    later = max(parsed_model, parsed_version)
+    return model_name_timestamp if later == parsed_model else litellm_version_timestamp
 
 
 def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:

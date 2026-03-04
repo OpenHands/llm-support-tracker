@@ -426,44 +426,101 @@ class TestSearchInfraProxy:
     """Tests for search_infra_proxy function."""
 
     @patch("track_llm_support._get_infra_repo")
-    def test_search_eval_proxy_success(self, mock_get_repo):
-        """Test successful eval proxy search with valid versions."""
-        # Mock the infra cache with version history
+    @patch("track_llm_support.search_infra_proxy_for_model_name")
+    def test_search_both_conditions_met_model_name_later(self, mock_search_name, mock_get_repo):
+        """Test when both conditions met - model name appears AFTER litellm version deployed."""
+        # Model appears in config at this time
+        mock_search_name.return_value = "2024-01-20T10:00:00Z"
+        
+        # Litellm version deployed earlier
         mock_get_repo.return_value = {
             "eval_proxy_history": [
-                ("2024-01-10T10:00:00Z", "v1.79.0"),  # oldest, has valid version
-                ("2024-01-15T10:00:00Z", "v1.80.0-stable"),
+                ("2024-01-10T10:00:00Z", "v1.79.0"),  # Earlier
             ],
             "prod_proxy_history": [],
         }
         
-        # Valid versions that support the model
-        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
-        
+        valid_versions = ["v1.79.0"]
         result = search_infra_proxy("test-model", "eval_proxy", valid_versions)
-        assert result == "2024-01-10T10:00:00Z"  # Earliest commit with valid version
+        
+        # Should return the LATER timestamp (when both conditions are true)
+        assert result == "2024-01-20T10:00:00Z"
 
     @patch("track_llm_support._get_infra_repo")
-    def test_search_prod_proxy_not_found(self, mock_get_repo):
-        """Test prod proxy search when no valid versions were deployed."""
-        # Mock the infra cache with version history that doesn't match
+    @patch("track_llm_support.search_infra_proxy_for_model_name")
+    def test_search_both_conditions_met_version_later(self, mock_search_name, mock_get_repo):
+        """Test when both conditions met - litellm version deployed AFTER model name appears."""
+        # Model appears in config earlier
+        mock_search_name.return_value = "2024-01-10T10:00:00Z"
+        
+        # Litellm version deployed later
         mock_get_repo.return_value = {
-            "eval_proxy_history": [],
-            "prod_proxy_history": [
-                ("2024-01-10T10:00:00Z", "v1.70.0"),  # Not in valid versions
-                ("2024-01-15T10:00:00Z", "v1.71.0"),
+            "eval_proxy_history": [
+                ("2024-01-20T10:00:00Z", "v1.79.0"),  # Later
             ],
+            "prod_proxy_history": [],
         }
         
-        # Valid versions that don't match what's deployed
-        valid_versions = ["v1.81.0", "v1.80.0-stable", "v1.79.0"]
+        valid_versions = ["v1.79.0"]
+        result = search_infra_proxy("test-model", "eval_proxy", valid_versions)
         
-        result = search_infra_proxy("test-model", "prod_proxy", valid_versions)
+        # Should return the LATER timestamp (when both conditions are true)
+        assert result == "2024-01-20T10:00:00Z"
+
+    @patch("track_llm_support._get_infra_repo")
+    @patch("track_llm_support.search_infra_proxy_for_model_name")
+    def test_search_only_model_name_no_version(self, mock_search_name, mock_get_repo):
+        """Test when model in config but no valid litellm version deployed."""
+        # Model in config
+        mock_search_name.return_value = "2024-01-20T10:00:00Z"
+        
+        # No valid litellm version
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.70.0"),  # Not in valid versions
+            ],
+            "prod_proxy_history": [],
+        }
+        
+        valid_versions = ["v1.79.0"]
+        result = search_infra_proxy("test-model", "eval_proxy", valid_versions)
+        
+        # Should return None (both conditions not met)
+        assert result is None
+
+    @patch("track_llm_support._get_infra_repo")
+    @patch("track_llm_support.search_infra_proxy_for_model_name")
+    def test_search_only_version_no_model_name(self, mock_search_name, mock_get_repo):
+        """Test when litellm version deployed but model not in config.
+        
+        This is a regression test for issue #17: GLM-4.7 was marked as supported
+        just because litellm supported it, even though it wasn't in the config.
+        """
+        # Model NOT in config
+        mock_search_name.return_value = None
+        
+        # Valid litellm version deployed
+        mock_get_repo.return_value = {
+            "eval_proxy_history": [
+                ("2024-01-10T10:00:00Z", "v1.79.0"),
+            ],
+            "prod_proxy_history": [],
+        }
+        
+        valid_versions = ["v1.79.0"]
+        result = search_infra_proxy("GLM-4.7", "eval_proxy", valid_versions)
+        
+        # Should return None (both conditions not met)
         assert result is None
     
-    def test_search_infra_proxy_no_valid_versions(self):
+    @patch("track_llm_support.search_infra_proxy_for_model_name")
+    def test_search_infra_proxy_no_valid_versions(self, mock_search_name):
         """Test that None is returned when valid_versions is None."""
+        mock_search_name.return_value = "2024-01-20T10:00:00Z"
+        
         result = search_infra_proxy("test-model", "eval_proxy", None)
+        
+        # Should return None (litellm version condition not met)
         assert result is None
 
 
