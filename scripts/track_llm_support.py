@@ -89,11 +89,32 @@ def get_model_search_terms(model_id: str) -> list[str]:
     """
     Get a list of search terms for a model, including the full name and family names.
     
-    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "Gemini-3", "Gemini 3"]
+    For example, "Gemini-3-Pro" would return ["Gemini-3-Pro", "gemini-3-pro", "Gemini-3", ...]
     """
     import re
     
+    # Model-specific aliases for frontend/SDK search (different naming conventions)
+    SEARCH_ALIASES = {
+        "kimi-k2-thinking": ["kimi-k2-0711-preview", "kimi-k2"],
+        "kimi-k2.5": ["kimi-k2.5", "kimi-k2-5"],
+        "deepseek-v3.2-reasoner": ["deepseek-reasoner", "deepseek-v3.2"],
+        "glm-4.7": ["glm-4", "glm4"],
+        "glm-5": ["glm-5", "glm5"],
+        "qwen3-coder-next": ["qwen3-coder-next", "qwen-3-coder-next"],
+    }
+    
     terms = [model_id]
+    
+    # Always include lowercase version for case-insensitive matching
+    lowercase = model_id.lower()
+    if lowercase not in terms:
+        terms.append(lowercase)
+    
+    # Add model-specific aliases
+    if lowercase in SEARCH_ALIASES:
+        for alias in SEARCH_ALIASES[lowercase]:
+            if alias not in terms:
+                terms.append(alias)
     
     # Try removing common suffixes like -Pro, -Flash, -Nano, etc.
     suffixes = ["-Pro", "-Flash", "-Nano", "-Thinking", "-Codex", "-Reasoner", ".5", "-480B", "-235B"]
@@ -102,6 +123,9 @@ def get_model_search_terms(model_id: str) -> list[str]:
             base = model_id[:-len(suffix)]
             if base not in terms:
                 terms.append(base)
+            # Also add lowercase version
+            if base.lower() not in terms:
+                terms.append(base.lower())
     
     # Also try with spaces instead of hyphens
     spaced = model_id.replace("-", " ")
@@ -189,7 +213,8 @@ def get_litellm_model_search_terms(model_id: str) -> list[str]:
         # DeepSeek V3.2 Reasoner - use versioned name only
         # Note: "deepseek-reasoner" is a separate unversioned model that predates V3.2
         "deepseek-v3.2-reasoner": ["deepseek/deepseek-v3.2"],
-        # Gemini 3 Flash - litellm uses "preview" suffix
+        # Gemini 3 Pro/Flash - litellm uses "preview" suffix
+        "gemini-3-pro": ["gemini-3-pro-preview"],
         "gemini-3-flash": ["gemini-3-flash-preview"],
         # GLM-5 - litellm uses zai/ prefix
         "glm-5": ["zai/glm-5"],
@@ -804,45 +829,151 @@ def cleanup_infra_cache():
         _infra_cache["prod_proxy_history"] = None
 
 
+def search_infra_proxy_for_model_name(model_id: str, proxy_type: str) -> Optional[str]:
+    """
+    Search for when a model name first appeared in the proxy config.
+    
+    This does a git log search for the model name in the litellm.yaml file.
+    
+    Args:
+        model_id: The language model ID to search for
+        proxy_type: Either "eval_proxy" or "prod_proxy"
+    
+    Returns:
+        ISO timestamp of when the model name first appeared, or None
+    """
+    import subprocess
+    
+    path_map = {
+        "eval_proxy": "k8s/evaluation/litellm.yaml",
+        "prod_proxy": "k8s/production/litellm.yaml",
+    }
+    path = path_map.get(proxy_type)
+    if not path:
+        return None
+    
+    try:
+        cache = _get_infra_repo()
+        temp_dir = cache["temp_dir"]
+        
+        if not temp_dir:
+            return None
+        
+        # Search for the model name (case-insensitive)
+        model_lower = model_id.lower()
+        
+        # Get all commits that modified this file
+        result = subprocess.run(
+            ["git", "log", "--format=%H %aI", "--follow", "--", path],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if result.returncode != 0:
+            return None
+        
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append((parts[0], parts[1]))  # (sha, date)
+        
+        # Process commits oldest to newest, find first one containing the model
+        first_appearance = None
+        for sha, commit_date in reversed(commits):
+            result = subprocess.run(
+                ["git", "show", f"{sha}:{path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode != 0:
+                continue
+            
+            content_lower = result.stdout.lower()
+            # Check for model_name entry with this model
+            if f'model_name: "{model_lower}"' in content_lower or f"model_name: '{model_lower}'" in content_lower:
+                first_appearance = commit_date
+                break
+        
+        return first_appearance
+        
+    except Exception as e:
+        print(f"Warning: Error searching infra proxy for model name: {e}", file=sys.stderr)
+        return None
+
+
 def search_infra_proxy(model_id: str, proxy_type: str, valid_versions: list[str] = None) -> Optional[str]:
     """
-    Search for when a litellm version supporting the model was deployed to infra.
+    Search for when a model was first usable via the infra proxy.
 
-    This searches commit history for when any of the valid litellm versions
-    (that support the model) was first deployed to the specified environment.
+    This searches for two things:
+    1. When the model name first appeared directly in the proxy config
+    2. When a litellm version supporting the model was first deployed
+    
+    Returns the earlier of the two dates.
 
     Args:
         model_id: The language model ID to search for
         proxy_type: Either "eval_proxy" or "prod_proxy"
         valid_versions: List of litellm version tags that support the model.
-                       If None, returns None.
+                       Can be None if no official litellm support yet.
 
     Returns:
-        ISO timestamp of when a supporting version was first deployed, or None
+        ISO timestamp of when the model became usable, or None
     """
-    if valid_versions is None:
+    timestamps = []
+    
+    # Method 1: Check if model name appears directly in config
+    model_name_timestamp = search_infra_proxy_for_model_name(model_id, proxy_type)
+    if model_name_timestamp:
+        timestamps.append(model_name_timestamp)
+    
+    # Method 2: Check for litellm version deployment (if we have valid versions)
+    if valid_versions:
+        try:
+            cache = _get_infra_repo()
+            history = cache.get(f"{proxy_type}_history", [])
+            
+            if history:
+                valid_set = set(valid_versions)
+                for commit_date, deployed_version in history:
+                    if deployed_version in valid_set:
+                        timestamps.append(commit_date)
+                        break
+        except Exception as e:
+            print(f"Warning: Error searching infra proxy history: {e}", file=sys.stderr)
+    
+    if not timestamps:
         return None
     
-    try:
-        cache = _get_infra_repo()
-        history = cache.get(f"{proxy_type}_history", [])
-        
-        if not history:
-            return None
-        
-        # Convert to set for O(1) lookup
-        valid_set = set(valid_versions)
-        
-        # Find the earliest deployment of a valid version
-        for commit_date, deployed_version in history:
-            if deployed_version in valid_set:
-                return commit_date
-        
+    # Return the earliest timestamp
+    if len(timestamps) == 1:
+        return timestamps[0]
+    
+    # Parse and compare
+    from datetime import datetime
+    def parse_ts(ts):
+        for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
+            try:
+                return datetime.strptime(ts.replace("Z", "+00:00") if "Z" in ts else ts, fmt)
+            except ValueError:
+                continue
         return None
-        
-    except Exception as e:
-        print(f"Warning: Error searching infra proxy: {e}", file=sys.stderr)
-        return None
+    
+    parsed = [(t, parse_ts(t)) for t in timestamps]
+    parsed = [(t, p) for t, p in parsed if p is not None]
+    if parsed:
+        earliest = min(parsed, key=lambda x: x[1])
+        return earliest[0]
+    
+    return timestamps[0]
 
 
 def adjust_timestamp_to_release(timestamp: Optional[str], release_date: str) -> Optional[str]:
@@ -921,7 +1052,51 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         cache = _get_litellm_repo()
         tag_dates = cache["tag_dates"]
         earliest_version = valid_versions[-1]  # Last is earliest (sorted newest first)
-        litellm_timestamp = tag_dates.get(earliest_version)
+        official_litellm_timestamp = tag_dates.get(earliest_version)
+    else:
+        official_litellm_timestamp = None
+
+    # Search for eval proxy support
+    # Find when a litellm version that supports the model was first deployed
+    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
+    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
+    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
+
+    # Search for prod proxy support
+    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
+    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
+    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
+
+    # Compute litellm_support_timestamp as the earliest of:
+    # 1. Official LiteLLM support (from BerriAI/litellm)
+    # 2. Eval proxy (model in k8s/evaluation/litellm.yaml)
+    # 3. Prod proxy (model in k8s/production/litellm.yaml)
+    # This is because if a model is in our proxy configs, we can use it via litellm
+    litellm_candidates = [
+        official_litellm_timestamp,
+        eval_proxy_timestamp,
+        prod_proxy_timestamp,
+    ]
+    litellm_candidates = [t for t in litellm_candidates if t is not None]
+    if litellm_candidates:
+        # Parse and find earliest
+        from datetime import datetime
+        def parse_ts(ts):
+            # Handle various formats
+            for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
+                try:
+                    return datetime.strptime(ts.replace("Z", "+00:00") if "Z" in ts else ts, fmt)
+                except ValueError:
+                    continue
+            return None
+        
+        parsed = [(t, parse_ts(t)) for t in litellm_candidates]
+        parsed = [(t, p) for t, p in parsed if p is not None]
+        if parsed:
+            earliest = min(parsed, key=lambda x: x[1])
+            litellm_timestamp = earliest[0]
+        else:
+            litellm_timestamp = None
     else:
         litellm_timestamp = None
     
@@ -946,17 +1121,6 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in openhands-index-results...")
     index_timestamp = search_index_results_for_model(model_id)
     result["index_results_timestamp"] = adjust_timestamp_to_release(index_timestamp, release_date)
-
-    # Search for eval proxy support
-    # Find when a litellm version that supports the model was first deployed
-    print(f"Searching for {model_id} in All-Hands-AI/infra eval proxy...")
-    eval_proxy_timestamp = search_infra_proxy(model_id, "eval_proxy", valid_versions)
-    result["eval_proxy_timestamp"] = adjust_timestamp_to_release(eval_proxy_timestamp, release_date)
-
-    # Search for prod proxy support
-    print(f"Searching for {model_id} in All-Hands-AI/infra prod proxy...")
-    prod_proxy_timestamp = search_infra_proxy(model_id, "prod_proxy", valid_versions)
-    result["prod_proxy_timestamp"] = adjust_timestamp_to_release(prod_proxy_timestamp, release_date)
 
     return result
 

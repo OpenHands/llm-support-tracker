@@ -214,6 +214,16 @@ class TestGetLitellmModelSearchTerms:
         terms = get_litellm_model_search_terms("GLM-5")
         assert terms == ["zai/glm-5"]
 
+    def test_gemini_3_pro_alias(self):
+        """Test Gemini-3-Pro returns preview suffix."""
+        terms = get_litellm_model_search_terms("Gemini-3-Pro")
+        assert terms == ["gemini-3-pro-preview"]
+
+    def test_gemini_3_flash_alias(self):
+        """Test Gemini-3-Flash returns preview suffix."""
+        terms = get_litellm_model_search_terms("Gemini-3-Flash")
+        assert terms == ["gemini-3-flash-preview"]
+
     def test_model_without_alias(self):
         """Test model without alias returns lowercase original."""
         terms = get_litellm_model_search_terms("claude-sonnet-4-5")
@@ -469,6 +479,63 @@ class TestOutputFormat:
 
         finally:
             os.unlink(output_file)
+
+
+class TestLitellmTimestampLogic:
+    """Tests for litellm_support_timestamp earliest-of logic."""
+
+    def test_earliest_timestamp_selection(self):
+        """Test that the earliest timestamp is selected from multiple sources."""
+        from datetime import datetime
+        
+        # Simulate the logic in track_llm_support
+        def find_earliest(candidates):
+            candidates = [t for t in candidates if t is not None]
+            if not candidates:
+                return None
+            
+            def parse_ts(ts):
+                for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"]:
+                    try:
+                        return datetime.strptime(ts.replace("Z", "+00:00") if "Z" in ts else ts, fmt)
+                    except ValueError:
+                        continue
+                return None
+            
+            parsed = [(t, parse_ts(t)) for t in candidates]
+            parsed = [(t, p) for t, p in parsed if p is not None]
+            if parsed:
+                earliest = min(parsed, key=lambda x: x[1])
+                return earliest[0]
+            return None
+        
+        # Test case 1: Official LiteLLM is earliest
+        result = find_earliest([
+            "2025-11-18T16:06:06-08:00",  # Official LiteLLM
+            "2026-01-14T13:43:57-05:00",  # Eval proxy
+            "2026-01-14T12:50:34-05:00",  # Prod proxy
+        ])
+        assert result == "2025-11-18T16:06:06-08:00"
+        
+        # Test case 2: Eval proxy is earliest
+        result = find_earliest([
+            "2026-02-01T10:00:00Z",       # Official LiteLLM
+            "2026-01-15T08:00:00Z",       # Eval proxy
+            "2026-01-20T12:00:00Z",       # Prod proxy
+        ])
+        assert result == "2026-01-15T08:00:00Z"
+        
+        # Test case 3: Only proxy timestamps (no official)
+        result = find_earliest([
+            None,                          # Official LiteLLM
+            "2026-01-14T13:43:57-05:00",  # Eval proxy
+            "2026-01-10T12:50:34-05:00",  # Prod proxy (earliest)
+        ])
+        assert result == "2026-01-10T12:50:34-05:00"
+        
+        # Test case 4: All None
+        result = find_earliest([None, None, None])
+        assert result is None
 
 
 if __name__ == "__main__":

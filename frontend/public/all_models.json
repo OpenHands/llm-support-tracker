@@ -39,9 +39,9 @@
     "sdk_support_timestamp": "2025-12-11T00:00:00Z",
     "frontend_support_timestamp": "2026-01-30T09:15:47-08:00",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
-    "eval_proxy_timestamp": "2026-01-14T13:43:57-05:00",
-    "prod_proxy_timestamp": "2026-01-14T12:50:34-05:00",
-    "litellm_support_timestamp": "2025-12-22T16:32:13+05:30"
+    "eval_proxy_timestamp": "2025-12-19T12:58:03-06:00",
+    "prod_proxy_timestamp": "2025-12-19T12:58:03-06:00",
+    "litellm_support_timestamp": "2025-12-19T12:58:03-06:00"
   },
   {
     "model_id": "GPT-5.2-Codex",
@@ -50,9 +50,9 @@
     "sdk_support_timestamp": "2025-12-18T00:00:00Z",
     "frontend_support_timestamp": "2026-01-30T09:15:47-08:00",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
-    "eval_proxy_timestamp": "2026-01-26T08:48:42-08:00",
-    "prod_proxy_timestamp": "2026-01-27T12:10:27-08:00",
-    "litellm_support_timestamp": "2026-01-24T09:39:23-08:00"
+    "eval_proxy_timestamp": "2025-12-19T12:58:03-06:00",
+    "prod_proxy_timestamp": "2025-12-19T12:58:03-06:00",
+    "litellm_support_timestamp": "2025-12-19T12:58:03-06:00"
   },
   {
     "model_id": "Gemini-3-Flash",
@@ -72,27 +72,27 @@
     "sdk_support_timestamp": "2025-11-18T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
-    "eval_proxy_timestamp": "2026-01-26T08:48:42-08:00",
-    "prod_proxy_timestamp": "2026-01-27T12:10:27-08:00",
-    "litellm_support_timestamp": "2026-01-24T09:39:23-08:00"
+    "eval_proxy_timestamp": "2026-01-14T13:43:57-05:00",
+    "prod_proxy_timestamp": "2026-01-14T12:50:34-05:00",
+    "litellm_support_timestamp": "2025-11-18T16:06:06-08:00"
   },
   {
     "model_id": "Kimi-K2-Thinking",
     "release_date": "2025-11-06",
     "tier": 1,
     "sdk_support_timestamp": "2025-11-06T00:00:00Z",
-    "frontend_support_timestamp": null,
+    "frontend_support_timestamp": "2025-11-06T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
     "eval_proxy_timestamp": "2026-01-14T13:43:57-05:00",
-    "prod_proxy_timestamp": "2026-01-14T12:50:34-05:00",
-    "litellm_support_timestamp": "2025-11-24T12:22:50-08:00"
+    "prod_proxy_timestamp": "2025-11-10T21:02:25+07:00",
+    "litellm_support_timestamp": "2025-11-10T21:02:25+07:00"
   },
   {
     "model_id": "Kimi-K2.5",
     "release_date": "2026-01-27",
     "tier": 1,
     "sdk_support_timestamp": "2026-01-27T00:00:00Z",
-    "frontend_support_timestamp": null,
+    "frontend_support_timestamp": "2026-01-27T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
     "eval_proxy_timestamp": "2026-02-17T07:43:53-05:00",
     "prod_proxy_timestamp": "2026-02-25T09:51:02-05:00",
@@ -116,9 +116,9 @@
     "sdk_support_timestamp": "2026-02-01T00:00:00Z",
     "frontend_support_timestamp": "2026-02-11T16:57:22Z",
     "index_results_timestamp": "2026-02-12T01:50:30Z",
-    "eval_proxy_timestamp": null,
-    "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": "2026-02-16T17:05:53-08:00"
+    "eval_proxy_timestamp": "2026-02-11T17:13:43Z",
+    "prod_proxy_timestamp": "2026-02-11T16:00:34Z",
+    "litellm_support_timestamp": "2026-02-11T16:00:34Z"
   },
   {
     "model_id": "Nemotron-3-Nano",
@@ -135,12 +135,12 @@
     "model_id": "Qwen3-Coder-480B",
     "release_date": "2025-12-01",
     "tier": 1,
-    "sdk_support_timestamp": null,
-    "frontend_support_timestamp": null,
+    "sdk_support_timestamp": "2025-12-01T00:00:00Z",
+    "frontend_support_timestamp": "2025-12-01T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
-    "eval_proxy_timestamp": null,
-    "prod_proxy_timestamp": null,
-    "litellm_support_timestamp": null
+    "eval_proxy_timestamp": "2025-12-01T00:00:00Z",
+    "prod_proxy_timestamp": "2025-12-01T00:00:00Z",
+    "litellm_support_timestamp": "2025-12-01T00:00:00Z"
   },
   {
     "model_id": "Qwen3-Coder-Next",
@@ -172,7 +172,7 @@
     "frontend_support_timestamp": "2026-02-05T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
     "eval_proxy_timestamp": "2026-02-06T13:26:15+01:00",
-    "prod_proxy_timestamp": "2026-02-25T09:51:02-05:00",
+    "prod_proxy_timestamp": "2026-02-09T15:18:01Z",
     "litellm_support_timestamp": "2026-02-05T11:38:54-08:00"
   },
   {
@@ -183,8 +183,8 @@
     "frontend_support_timestamp": "2025-09-29T00:00:00Z",
     "index_results_timestamp": "2026-02-10T07:52:36-03:00",
     "eval_proxy_timestamp": "2026-01-14T13:43:57-05:00",
-    "prod_proxy_timestamp": "2026-01-14T12:50:34-05:00",
-    "litellm_support_timestamp": "2025-10-08T15:35:25-07:00"
+    "prod_proxy_timestamp": "2025-09-29T13:48:37-04:00",
+    "litellm_support_timestamp": "2025-09-29T13:48:37-04:00"
   },
   {
     "model_id": "claude-sonnet-4-6",
@@ -193,8 +193,8 @@
     "sdk_support_timestamp": "2026-02-20T00:00:00Z",
     "frontend_support_timestamp": "2026-02-20T00:00:00Z",
     "index_results_timestamp": "2026-03-02T09:03:53-06:00",
-    "eval_proxy_timestamp": "2026-02-20T09:33:24-05:00",
-    "prod_proxy_timestamp": "2026-02-25T09:51:02-05:00",
+    "eval_proxy_timestamp": "2026-02-20T00:00:00Z",
+    "prod_proxy_timestamp": "2026-02-20T00:21:29+08:00",
     "litellm_support_timestamp": "2026-02-20T00:00:00Z"
   }
 ]
