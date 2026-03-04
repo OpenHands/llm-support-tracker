@@ -12,6 +12,7 @@ a JSON file containing timestamps for when the model was supported in:
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Optional
@@ -20,6 +21,41 @@ import requests
 
 
 GITHUB_API_BASE = "https://api.github.com"
+
+# Tier 1 model patterns (priority models)
+TIER_1_PATTERNS = [
+    r"^claude-sonnet-",      # Claude Sonnet
+    r"^claude-opus-",        # Claude Opus
+    r"^Gemini-.*-Pro$",      # Gemini Pro
+    r"^Gemini-.*-Flash$",    # Gemini Flash
+    r"^GPT-5",               # GPT-5*
+    r"^GLM-",                # GLM
+    r"^MiniMax-",            # MiniMax
+    r"^Qwen3-Coder-",        # Qwen3-Coder-*
+    r"^Kimi-K2",             # Kimi-K2*
+]
+
+
+def get_model_tier(model_id: str) -> int:
+    """
+    Determine the tier of a model based on its ID.
+    
+    Tier 1: Priority models (Claude Sonnet/Opus, Gemini Pro/Flash, GPT-5*, 
+            GLM, MiniMax, Qwen3-Coder-480B, Kimi-K2)
+    Tier 2: All other models
+    
+    Args:
+        model_id: The model ID to check
+        
+    Returns:
+        1 for tier 1 models, 2 for tier 2
+    """
+    for pattern in TIER_1_PATTERNS:
+        if re.match(pattern, model_id):
+            return 1
+    return 2
+
+
 REPOS = {
     "sdk": "OpenHands/software-agent-sdk",
     "frontend": "OpenHands/OpenHands",
@@ -867,6 +903,7 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     result = {
         "model_id": model_id,
         "release_date": release_date,
+        "tier": get_model_tier(model_id),
         "sdk_support_timestamp": None,
         "frontend_support_timestamp": None,
         "index_results_timestamp": None,

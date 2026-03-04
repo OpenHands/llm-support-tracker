@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from track_llm_support import (
     get_github_headers,
     get_litellm_model_search_terms,
+    get_model_tier,
     check_model_in_litellm_json,
     search_commits_for_model,
     search_sdk_for_model,
@@ -46,6 +47,60 @@ class TestGetGithubHeaders:
             assert "Accept" in headers
             assert "Authorization" in headers
             assert headers["Authorization"] == "Bearer test_token"
+
+
+class TestGetModelTier:
+    """Tests for get_model_tier function."""
+
+    def test_claude_sonnet_is_tier_1(self):
+        """Claude Sonnet models should be tier 1."""
+        assert get_model_tier("claude-sonnet-4-5") == 1
+        assert get_model_tier("claude-sonnet-4-6") == 1
+        assert get_model_tier("claude-sonnet-3-5") == 1
+
+    def test_claude_opus_is_tier_1(self):
+        """Claude Opus models should be tier 1."""
+        assert get_model_tier("claude-opus-4-5") == 1
+        assert get_model_tier("claude-opus-4-6") == 1
+
+    def test_gemini_pro_flash_is_tier_1(self):
+        """Gemini Pro and Flash models should be tier 1."""
+        assert get_model_tier("Gemini-3-Pro") == 1
+        assert get_model_tier("Gemini-3-Flash") == 1
+        assert get_model_tier("Gemini-2-Pro") == 1
+        assert get_model_tier("Gemini-2-Flash") == 1
+
+    def test_gpt5_is_tier_1(self):
+        """GPT-5* models should be tier 1."""
+        assert get_model_tier("GPT-5.2") == 1
+        assert get_model_tier("GPT-5.2-Codex") == 1
+        assert get_model_tier("GPT-5") == 1
+
+    def test_glm_is_tier_1(self):
+        """GLM models should be tier 1."""
+        assert get_model_tier("GLM-4.7") == 1
+        assert get_model_tier("GLM-5") == 1
+
+    def test_minimax_is_tier_1(self):
+        """MiniMax models should be tier 1."""
+        assert get_model_tier("MiniMax-M2.1") == 1
+        assert get_model_tier("MiniMax-M2.5") == 1
+
+    def test_qwen3_coder_is_tier_1(self):
+        """Qwen3-Coder-* models should be tier 1."""
+        assert get_model_tier("Qwen3-Coder-480B") == 1
+        assert get_model_tier("Qwen3-Coder-Next") == 1
+
+    def test_kimi_k2_is_tier_1(self):
+        """Kimi-K2* models should be tier 1."""
+        assert get_model_tier("Kimi-K2-Thinking") == 1
+        assert get_model_tier("Kimi-K2.5") == 1
+
+    def test_other_models_are_tier_2(self):
+        """Non-priority models should be tier 2."""
+        assert get_model_tier("DeepSeek-V3.2-Reasoner") == 2
+        assert get_model_tier("Nemotron-3-Nano") == 2
+        assert get_model_tier("SomeOther-Model") == 2
 
 
 class TestSearchCommitsForModel:

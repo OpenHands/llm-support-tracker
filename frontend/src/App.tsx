@@ -13,6 +13,7 @@ import {
 interface ModelSupport {
   model_id: string;
   release_date: string;
+  tier: number;
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
   index_results_timestamp: string | null;
@@ -361,6 +362,7 @@ function App() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showTier2, setShowTier2] = useState(false);
   const [useSmoothing, setUseSmoothing] = useState(true);
 
   useEffect(() => {
@@ -379,7 +381,9 @@ function App() {
       });
   }, []);
 
-  const sortedModels = [...models].sort((a, b) => {
+  // Filter models by tier, then sort
+  const filteredModels = showTier2 ? models : models.filter((m) => m.tier === 1);
+  const sortedModels = [...filteredModels].sort((a, b) => {
     const aVal = a[sortField];
     const bVal = b[sortField];
     if (aVal === null && bVal === null) return 0;
@@ -399,19 +403,21 @@ function App() {
     }
   };
 
-  // Compute days unsupported data for model family charts
+  // Compute days unsupported data for model family charts (tier 1 models only)
   const daysUnsupportedData = useMemo(() => {
-    if (models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
+    // Filter to tier 1 models only for metrics
+    const tier1Models = models.filter((m) => m.tier === 1);
+    if (tier1Models.length === 0) return { claude: [], gpt: [], gemini: [], open: [], average: [] };
 
     // First, determine the global date range across all families for consistent sampling
-    const allReleaseDates = models.map((m) => m.release_date).sort();
+    const allReleaseDates = tier1Models.map((m) => m.release_date).sort();
     const globalStart = allReleaseDates[0];
     const globalEnd = new Date().toISOString().split('T')[0];
     const sharedSampleDates = getWeeklySampleDates(globalStart, globalEnd);
 
     const familyData: Record<string, DaysUnsupportedDataPoint[]> = {};
     for (const [familyName, pattern] of Object.entries(MODEL_FAMILIES)) {
-      familyData[familyName] = computeFamilyChartData(models, pattern, sharedSampleDates, useSmoothing);
+      familyData[familyName] = computeFamilyChartData(tier1Models, pattern, sharedSampleDates, useSmoothing);
     }
 
     const averageData = computeAverageChartData(familyData);
@@ -464,6 +470,20 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#3c3c4a] flex items-center justify-between">
+            <span className="text-sm text-[#9099ac]">
+              Showing {sortedModels.length} of {models.length} models
+            </span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showTier2}
+                onChange={(e) => setShowTier2(e.target.checked)}
+                className="w-4 h-4 rounded border-[#3c3c4a] bg-[#24272e] text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <span className="text-sm text-[#9099ac]">Show tier 2 models</span>
+            </label>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>

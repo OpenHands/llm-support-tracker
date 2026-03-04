@@ -11,6 +11,7 @@ import {
 interface ModelSupport {
   model_id: string;
   release_date: string;
+  tier: number;
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
   index_results_timestamp: string | null;
@@ -21,6 +22,7 @@ interface ModelSupport {
 
 describe('isModelSupportedForAspect', () => {
   const testModel: ModelSupport = {
+    tier: 1,
     model_id: 'test-model',
     release_date: '2024-01-01',
     sdk_support_timestamp: '2024-01-05T00:00:00Z',
@@ -57,7 +59,8 @@ describe('isModelSupportedForAspect', () => {
 
   it('should return true for complete when all aspects are supported', () => {
     const fullySupported: ModelSupport = {
-      model_id: 'fully-supported',
+      tier: 1,
+    model_id: 'fully-supported',
       release_date: '2024-01-01',
       sdk_support_timestamp: '2024-01-02T00:00:00Z',
       frontend_support_timestamp: '2024-01-02T00:00:00Z',
@@ -75,7 +78,8 @@ describe('computeDaysUnsupported', () => {
   it('should return empty array when no models match the pattern', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'test-model',
+        tier: 1,
+    model_id: 'test-model',
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -92,7 +96,8 @@ describe('computeDaysUnsupported', () => {
   it('should count consecutive days unsupported', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'claude-test',
+        tier: 1,
+    model_id: 'claude-test',
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -127,7 +132,8 @@ describe('computeDaysUnsupported', () => {
     const releaseDate = '2024-06-01';
     const models: ModelSupport[] = [
       {
-        model_id: 'gpt-test',
+        tier: 1,
+    model_id: 'gpt-test',
         release_date: releaseDate,
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -153,7 +159,8 @@ describe('computeDaysUnsupported', () => {
   it('should handle multiple models - any unsupported keeps counting', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'claude-1',
+        tier: 1,
+    model_id: 'claude-1',
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -163,7 +170,8 @@ describe('computeDaysUnsupported', () => {
         litellm_support_timestamp: '2024-01-02T00:00:00Z',
       },
       {
-        model_id: 'claude-2',
+        tier: 1,
+    model_id: 'claude-2',
         release_date: '2024-01-03',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -260,7 +268,8 @@ describe('computeFamilyChartData', () => {
   it('should return data points with all aspects', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'claude-test',
+        tier: 1,
+    model_id: 'claude-test',
         release_date: '2024-01-01',
         sdk_support_timestamp: '2024-01-02T00:00:00Z',
         frontend_support_timestamp: '2024-01-03T00:00:00Z',
@@ -290,7 +299,8 @@ describe('computeFamilyChartData', () => {
   it('should use provided sample dates for consistent alignment', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'claude-test',
+        tier: 1,
+    model_id: 'claude-test',
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
@@ -312,7 +322,8 @@ describe('computeFamilyChartData', () => {
   it('should apply 30-day rolling average to smooth data', () => {
     const models: ModelSupport[] = [
       {
-        model_id: 'claude-test',
+        tier: 1,
+    model_id: 'claude-test',
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
