@@ -14,11 +14,34 @@ This skill guides the process of adding a new language model to the OpenHands LL
 
 ## Overview
 
-The LLM Support Tracker monitors when language models are supported across the OpenHands ecosystem. When adding a new model, update the configuration in `scripts/track_llm_support.py`.
+The LLM Support Tracker monitors when language models are supported across the OpenHands ecosystem. Adding a new model requires updating two files:
+1. `scripts/run_all_models.py` - Add the model to `MODEL_RELEASE_DATES` (required)
+2. `scripts/track_llm_support.py` - Add aliases to `MODEL_ALIASES` (if needed)
 
 ## Key Components
 
-### 1. TIER_1_PATTERNS
+### 1. MODEL_RELEASE_DATES (Source of Truth)
+
+Located in `scripts/run_all_models.py`, this dictionary is **the source of truth** for which models to track:
+
+```python
+MODEL_RELEASE_DATES = {
+    # Anthropic Claude models
+    "claude-sonnet-4-5": "2025-09-29",
+    "claude-opus-4-6": "2026-02-05",
+    # Google Gemini models
+    "Gemini-3-Pro": "2025-11-18",
+    "Gemini-3.1-Pro": "2026-03-04",
+    # OpenAI GPT models
+    "GPT-5.2": "2025-12-11",
+    "GPT-5.4": "2026-03-05",
+    # ... more models
+}
+```
+
+**When to modify**: Always add new models here with their official release date. Models are tracked immediately even before they have index results or proxy support.
+
+### 2. TIER_1_PATTERNS
 
 Located at the top of `track_llm_support.py`, this list defines regex patterns for tier 1 (priority) models:
 
@@ -52,24 +75,37 @@ MODEL_ALIASES: dict[str, list[str]] = {
 }
 ```
 
-**When to modify**: Always add a new entry when supporting a new model. Include all known aliases for the model.
+**When to modify**: Add aliases when the model uses different names across systems (frontend, SDK, LiteLLM, proxy).
 
 ## Adding a New Model
 
-### Step 1: Determine Model Tier
+### Step 1: Add to MODEL_RELEASE_DATES (Required)
+
+Add the model to `MODEL_RELEASE_DATES` in `scripts/run_all_models.py` with its official release date:
+
+```python
+MODEL_RELEASE_DATES = {
+    # ... existing models ...
+    "New-Model-Name": "2026-03-15",  # Official release date
+}
+```
+
+This is **required** - the model won't be tracked without this entry.
+
+### Step 2: Determine Model Tier
 
 Check if the model should be tier 1 (priority) or tier 2:
 - **Tier 1**: Major models from leading providers (Claude Sonnet/Opus, Gemini Pro/Flash, GPT-5*, GLM, Qwen3-Coder-*, MiniMax-M2.5, Kimi-K2.5)
 - **Tier 2**: All other models
 
-### Step 2: Check Tier Pattern Coverage
+### Step 3: Check Tier Pattern Coverage
 
-If adding a tier 1 model, verify the existing `TIER_1_PATTERNS` regex patterns. Only add a new pattern if no existing pattern matches the model ID.
+If adding a tier 1 model, verify the existing `TIER_1_PATTERNS` regex patterns in `scripts/track_llm_support.py`. Only add a new pattern if no existing pattern matches the model ID.
 
-### Step 3: Add to MODEL_ALIASES
+### Step 4: Add to MODEL_ALIASES (If Needed)
 
-Add an entry to `MODEL_ALIASES` with:
-- **Key**: The canonical model ID (e.g., `"Gemini-3.1-Pro"`)
+If the model uses different names across systems, add an entry to `MODEL_ALIASES` in `scripts/track_llm_support.py`:
+- **Key**: The canonical model ID (must match the key in `MODEL_RELEASE_DATES`)
 - **Value**: List of aliases used across different systems:
   - Frontend `verified-models.ts` names
   - LiteLLM naming conventions (e.g., `provider/model-name`)
@@ -85,7 +121,7 @@ Example:
 ],
 ```
 
-### Step 4: Add Tests
+### Step 5: Add Tests
 
 Add test cases to `tests/test_track_llm_support.py`:
 
@@ -104,7 +140,7 @@ Add test cases to `tests/test_track_llm_support.py`:
        assert "gemini-3.1-pro-preview" in aliases
    ```
 
-### Step 5: Run Tests
+### Step 6: Run Tests
 
 ```bash
 cd llm-support-tracker
@@ -114,15 +150,17 @@ pytest tests/ -v
 
 ## Validation Checklist
 
+- [ ] Model added to `MODEL_RELEASE_DATES` with correct release date
 - [ ] Model ID follows canonical naming convention
 - [ ] Tier 1 models are covered by `TIER_1_PATTERNS` regex
-- [ ] `MODEL_ALIASES` entry includes all known aliases
+- [ ] `MODEL_ALIASES` entry includes all known aliases (if needed)
 - [ ] Tests added for tier classification
-- [ ] Tests added for alias resolution
+- [ ] Tests added for alias resolution (if aliases added)
 - [ ] All tests pass
 
 ## File Locations
 
-- **Main script**: `scripts/track_llm_support.py`
+- **Model registry (source of truth)**: `scripts/run_all_models.py` - `MODEL_RELEASE_DATES`
+- **Tier patterns & aliases**: `scripts/track_llm_support.py`
 - **Tests**: `tests/test_track_llm_support.py`
 - **Dependencies**: `requirements.txt`
