@@ -88,6 +88,11 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "gemini-3-flash-preview",  # Frontend verified-models.ts
         "gemini-3-flash",
     ],
+    "Gemini-3.1-Pro": [
+        "gemini-3.1-pro-preview",  # Frontend verified-models.ts
+        "gemini-3.1-pro",
+        "gemini/gemini-3.1-pro",   # LiteLLM naming
+    ],
     # Moonshot Kimi models
     "Kimi-K2-Thinking": [
         "kimi-k2-thinking",              # The actual model name

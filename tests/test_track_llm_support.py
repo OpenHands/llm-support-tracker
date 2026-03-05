@@ -76,6 +76,14 @@ class TestModelAliases:
         aliases = get_model_aliases("Gemini-3-Flash")
         assert "gemini-3-flash-preview" in aliases
 
+    def test_gemini_31_pro_has_aliases(self):
+        """Gemini-3.1-Pro should have preview and LiteLLM aliases."""
+        aliases = get_model_aliases("Gemini-3.1-Pro")
+        assert "Gemini-3.1-Pro" in aliases
+        assert "gemini-3.1-pro-preview" in aliases
+        assert "gemini-3.1-pro" in aliases
+        assert "gemini/gemini-3.1-pro" in aliases
+
 
 class TestGetGithubHeaders:
     """Tests for get_github_headers function."""
@@ -119,6 +127,7 @@ class TestGetModelTier:
         assert get_model_tier("Gemini-3-Flash") == 1
         assert get_model_tier("Gemini-2-Pro") == 1
         assert get_model_tier("Gemini-2-Flash") == 1
+        assert get_model_tier("Gemini-3.1-Pro") == 1
 
     def test_gpt5_is_tier_1(self):
         """GPT-5* models should be tier 1."""
