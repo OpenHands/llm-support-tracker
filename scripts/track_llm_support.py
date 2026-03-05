@@ -753,18 +753,18 @@ REQUIRED_BENCHMARKS = {"swe-bench", "gaia", "commit0", "swt-bench", "swe-bench-m
 
 def search_index_results_for_model(model_id: str) -> Optional[str]:
     """
-    Search for when a model's results were completed in openhands-index-results.
+    Search for when a model's results were FIRST completed in openhands-index-results.
     
     A model is considered complete only when all 5 required benchmarks are present:
     swe-bench, gaia, commit0, swt-bench, swe-bench-multimodal.
     
-    Uses local git clone to find when the results became complete.
+    Uses local git clone to find the FIRST commit where all required benchmarks were present.
 
     Args:
         model_id: The language model ID to search for
 
     Returns:
-        ISO timestamp of when results were completed, or None if incomplete/not found
+        ISO timestamp of when results were FIRST completed, or None if incomplete/not found
     """
     import subprocess
     
@@ -786,7 +786,7 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
         if not folder_name:
             return None
         
-        # Check if all required benchmarks are present
+        # Check if all required benchmarks are present in current HEAD
         scores_path = os.path.join(results_dir, folder_name, "scores.json")
         if not os.path.exists(scores_path):
             return None
@@ -801,17 +801,51 @@ def search_index_results_for_model(model_id: str) -> Optional[str]:
             print(f"Warning: {model_id} missing benchmarks: {missing_benchmarks}", file=sys.stderr)
             return None
         
-        # Get the most recent commit that modified scores.json (when results were completed)
+        # Get ALL commits that modified scores.json, oldest first
         result = subprocess.run(
-            ["git", "log", "--format=%aI", "-1", "--", f"results/{folder_name}/scores.json"],
+            ["git", "log", "--format=%H %aI", "--reverse", "--", f"results/{folder_name}/scores.json"],
             cwd=temp_dir,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
         )
         
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        
+        # Parse commits (oldest first due to --reverse)
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append((parts[0], parts[1]))  # (sha, date)
+        
+        # Find the FIRST commit where all required benchmarks are present
+        scores_file_path = f"results/{folder_name}/scores.json"
+        for sha, commit_date in commits:
+            # Get file content at this commit
+            show_result = subprocess.run(
+                ["git", "show", f"{sha}:{scores_file_path}"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if show_result.returncode != 0:
+                continue
+            
+            try:
+                commit_scores = json.loads(show_result.stdout)
+                commit_benchmarks = {entry.get("benchmark") for entry in commit_scores}
+                
+                # Check if all required benchmarks are present
+                if REQUIRED_BENCHMARKS.issubset(commit_benchmarks):
+                    return commit_date
+            except (json.JSONDecodeError, TypeError):
+                continue
         
         return None
         
