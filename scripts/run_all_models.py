@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Script to run the LLM support tracker for all models in openhands-index-results.
+Script to run the LLM support tracker for all models.
 
-Outputs a single all_models.json file as the source of truth.
+MODEL_RELEASE_DATES is the source of truth for which models to track.
+Outputs a single all_models.json file.
 """
 
 import json
@@ -19,23 +20,27 @@ from track_llm_support import (
     cleanup_sdk_cache,
     cleanup_frontend_cache,
     cleanup_index_results_cache,
-    _get_index_results_repo,
 )
 
 
-# Release dates for known models (verified from official sources)
+# MODEL_RELEASE_DATES is the source of truth for which models to track.
+# Add new models here with their official release dates.
+# Models are tracked even before they have index results or proxy support.
 MODEL_RELEASE_DATES = {
+    # Anthropic Claude models
+    "claude-sonnet-4-5": "2025-09-29",
+    "claude-sonnet-4-6": "2026-02-20",
+    "claude-opus-4-5": "2025-11-24",
+    "claude-opus-4-6": "2026-02-05",
     # DeepSeek models
     "DeepSeek-V3.2-Reasoner": "2025-12-01",
     # GLM models (Z-AI/Zhipu)
     "GLM-4.7": "2025-10-01",
     "GLM-5": "2026-02-01",
-    # OpenAI GPT models
-    "GPT-5.2-Codex": "2025-12-18",
-    "GPT-5.2": "2025-12-11",
     # Google Gemini models
-    "Gemini-3-Flash": "2025-12-17",
     "Gemini-3-Pro": "2025-11-18",
+    "Gemini-3-Flash": "2025-12-17",
+    "Gemini-3.1-Pro": "2026-03-04",
     # Moonshot Kimi models
     "Kimi-K2-Thinking": "2025-11-06",
     "Kimi-K2.5": "2026-01-27",
@@ -44,48 +49,20 @@ MODEL_RELEASE_DATES = {
     "MiniMax-M2.5": "2026-02-01",
     # NVIDIA Nemotron models
     "Nemotron-3-Nano": "2025-10-01",
+    # OpenAI GPT models
+    "GPT-5.2": "2025-12-11",
+    "GPT-5.2-Codex": "2025-12-18",
+    "GPT-5.4": "2026-03-05",
     # Alibaba Qwen models
-    "Qwen3-Coder-480B": "2025-07-23",  # Announced July 23, 2025
+    "Qwen3-Coder-480B": "2025-07-23",
     "Qwen3-Coder-Next": "2026-01-15",
-    # Anthropic Claude models
-    "claude-opus-4-5": "2025-11-24",
-    "claude-opus-4-6": "2026-02-05",
-    "claude-sonnet-4-5": "2025-09-29",
-    "claude-sonnet-4-6": "2026-02-20",
 }
 
 
-def get_models_from_index_results() -> list[str]:
-    """Get list of model folders from openhands-index-results using local git clone."""
-    try:
-        cache = _get_index_results_repo()
-        temp_dir = cache["temp_dir"]
-        
-        results_dir = os.path.join(temp_dir, "results")
-        if not os.path.exists(results_dir):
-            print("No results directory found!")
-            return []
-        
-        models = []
-        for name in os.listdir(results_dir):
-            if os.path.isdir(os.path.join(results_dir, name)):
-                models.append(name)
-        
-        return sorted(models)
-    except Exception as e:
-        print(f"Error fetching models: {e}")
-        return []
-
-
 def main():
-    print("Fetching models from openhands-index-results...")
-    models = get_models_from_index_results()
-
-    if not models:
-        print("No models found!")
-        sys.exit(1)
-
-    print(f"Found {len(models)} models: {models}")
+    # Use MODEL_RELEASE_DATES as the source of truth
+    models = sorted(MODEL_RELEASE_DATES.keys())
+    print(f"Tracking {len(models)} models from MODEL_RELEASE_DATES: {models}")
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # Write directly to frontend/public - the single source of truth
@@ -98,8 +75,7 @@ def main():
         print(f"Processing: {model}")
         print("=" * 60)
 
-        # Get release date (use default if not known)
-        release_date = MODEL_RELEASE_DATES.get(model, "2025-01-01")
+        release_date = MODEL_RELEASE_DATES[model]
 
         try:
             result = track_llm_support(model, release_date)
