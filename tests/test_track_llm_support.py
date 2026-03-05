@@ -644,5 +644,22 @@ class TestLitellmTimestampLogic:
         assert result is None
 
 
+class TestSDKSearchPaths:
+    """Tests for SDK search path enhancement."""
+    
+    def test_sdk_search_includes_resolve_model_config(self):
+        """Verify that SDK search looks in resolve_model_config.py."""
+        # This is a documentation test to ensure the search paths are correct
+        import inspect
+        from track_llm_support import search_sdk_for_model
+        
+        # Get the source code of the function
+        source = inspect.getsource(search_sdk_for_model)
+        
+        # Verify both paths are included
+        assert "model_features.py" in source, "Should search model_features.py"
+        assert "resolve_model_config.py" in source, "Should search resolve_model_config.py"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
