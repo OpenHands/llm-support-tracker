@@ -79,6 +79,12 @@ MODEL_ALIASES: dict[str, list[str]] = {
     "GPT-5.2-Codex": [
         "gpt-5.2-codex",  # Frontend verified-models.ts
     ],
+    "GPT-5.3": [
+        "gpt-5.3",  # Frontend verified-models.ts
+    ],
+    "GPT-5.3-codex": [
+        "gpt-5.3-codex",  # Frontend verified-models.ts
+    ],
     "GPT-5.4": [
         "gpt-5.4",      # API model name
         "gpt-5.4-pro",  # Pro variant API model name

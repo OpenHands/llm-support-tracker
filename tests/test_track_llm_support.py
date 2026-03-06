@@ -84,6 +84,16 @@ class TestModelAliases:
         assert "gemini-3.1-pro" in aliases
         assert "gemini/gemini-3.1-pro" in aliases
 
+    def test_gpt53_has_aliases(self):
+        """GPT-5.3 models should have lowercase aliases."""
+        aliases = get_model_aliases("GPT-5.3")
+        assert "GPT-5.3" in aliases
+        assert "gpt-5.3" in aliases
+
+        aliases = get_model_aliases("GPT-5.3-codex")
+        assert "GPT-5.3-codex" in aliases
+        assert "gpt-5.3-codex" in aliases
+
     def test_gpt54_has_aliases(self):
         """GPT-5.4 should have API and pro variant aliases."""
         aliases = get_model_aliases("GPT-5.4")
@@ -140,6 +150,8 @@ class TestGetModelTier:
         """GPT-5* models should be tier 1."""
         assert get_model_tier("GPT-5.2") == 1
         assert get_model_tier("GPT-5.2-Codex") == 1
+        assert get_model_tier("GPT-5.3") == 1
+        assert get_model_tier("GPT-5.3-codex") == 1
         assert get_model_tier("GPT-5") == 1
         assert get_model_tier("GPT-5.4") == 1
 
