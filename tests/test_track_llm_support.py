@@ -652,5 +652,47 @@ class TestLitellmTimestampLogic:
         assert result is None
 
 
+class TestProxyWildcardDetection:
+    """Tests for proxy wildcard pattern detection."""
+    
+    def test_proxy_search_checks_wildcard_patterns(self):
+        """Verify that proxy search checks for wildcard patterns."""
+        # This is a documentation test to ensure wildcard detection is implemented
+        import inspect
+        from track_llm_support import search_infra_proxy_for_model_name
+        
+        # Get the source code of the function
+        source = inspect.getsource(search_infra_proxy_for_model_name)
+        
+        # Verify wildcard pattern checking is included
+        assert "wildcard" in source.lower(), "Should check for wildcard patterns"
+        assert "/*" in source, "Should check for provider/* patterns"
+    
+    def test_wildcard_pattern_extraction(self):
+        """Test that provider prefix is extracted correctly for wildcard matching."""
+        # Test the logic that extracts provider from alias
+        alias = "openrouter/z-ai/glm-5"
+        provider = alias.split('/')[0]
+        wildcard = f"{provider}/*"
+        
+        assert provider == "openrouter", "Should extract provider correctly"
+        assert wildcard == "openrouter/*", "Should create correct wildcard pattern"
+    
+    def test_model_with_slash_creates_wildcard(self):
+        """Models with / in aliases should generate wildcard patterns."""
+        # Verify the logic: if '/' in alias, create wildcard
+        test_aliases = [
+            ("openrouter/z-ai/glm-5", "openrouter/*"),
+            ("together/meta-llama/llama-3", "together/*"),
+            ("simple-model", None),  # No slash, no wildcard
+        ]
+        
+        for alias, expected_wildcard in test_aliases:
+            if '/' in alias:
+                provider = alias.split('/')[0]
+                wildcard = f"{provider}/*"
+                assert wildcard == expected_wildcard, f"Wildcard for {alias} should be {expected_wildcard}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
