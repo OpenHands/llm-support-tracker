@@ -492,15 +492,17 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.check_saas_verified_model")
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        self, mock_search_sdk, mock_search_frontend, mock_check_saas, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
-        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend code
+        mock_check_saas.return_value = True  # Also in SaaS database
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
         mock_search_infra.side_effect = [
             "2024-02-01T10:00:00Z",  # Eval proxy
@@ -521,23 +523,27 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["release_date"] == "2024-01-15"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
+        # frontend_support_timestamp is set only when BOTH code and SaaS are available
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
         assert result["eval_proxy_timestamp"] == "2024-02-01T10:00:00Z"
         assert result["prod_proxy_timestamp"] == "2024-02-03T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
         assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
+    @patch("track_llm_support.check_saas_verified_model")
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_for_model")
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, mock_find_versions
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_check_saas
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
         mock_search_frontend.return_value = None  # Frontend
+        mock_check_saas.return_value = False  # Not in SaaS
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
         mock_find_versions.return_value = []  # No litellm versions support this model
@@ -551,6 +557,29 @@ class TestTrackLlmSupport:
         assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
         assert result["litellm_support_timestamp"] is None
+
+    @patch("track_llm_support.check_saas_verified_model")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
+    @patch("track_llm_support.search_infra_proxy")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
+    def test_track_llm_support_frontend_code_only(
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_check_saas
+    ):
+        """Test that frontend_support_timestamp is None when only in code but not SaaS."""
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # In code
+        mock_check_saas.return_value = False  # NOT in SaaS database
+        mock_search_index.return_value = None
+        mock_search_infra.side_effect = [None, None]
+        mock_find_versions.return_value = []
+
+        result = track_llm_support("test-model", "2024-01-15")
+
+        # frontend_support_timestamp should be None because model is not in SaaS
+        assert result["frontend_support_timestamp"] is None
 
 
 class TestOutputFormat:
@@ -570,7 +599,6 @@ class TestOutputFormat:
                 "release_date": "2024-01-15",
                 "sdk_support_timestamp": "2024-01-20T10:00:00Z",
                 "frontend_support_timestamp": None,
-                "frontend_saas_available": False,
                 "index_results_timestamp": None,
                 "eval_proxy_timestamp": None,
                 "prod_proxy_timestamp": None,
@@ -588,7 +616,6 @@ class TestOutputFormat:
             assert "release_date" in loaded
             assert "sdk_support_timestamp" in loaded
             assert "frontend_support_timestamp" in loaded
-            assert "frontend_saas_available" in loaded
             assert "index_results_timestamp" in loaded
             assert "eval_proxy_timestamp" in loaded
             assert "prod_proxy_timestamp" in loaded
