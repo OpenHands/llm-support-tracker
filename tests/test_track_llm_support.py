@@ -228,7 +228,6 @@ class TestSearchIndexResultsForModel:
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_success(self, mock_get_repo):
         """Test successful index results folder search with complete benchmarks."""
-        import subprocess
         
         # Create a mock temp directory structure
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -251,12 +250,19 @@ class TestSearchIndexResultsForModel:
             
             mock_get_repo.return_value = {"temp_dir": temp_dir}
             
-            # Mock subprocess.run to return a date
+            # Mock subprocess.run - first call is git log, second is git show
             with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(
+                # First call: git log returns commit sha and date
+                git_log_result = MagicMock(
                     returncode=0,
-                    stdout="2024-01-15T10:00:00Z"
+                    stdout="abc123 2024-01-15T10:00:00Z"
                 )
+                # Second call: git show returns the scores.json content
+                git_show_result = MagicMock(
+                    returncode=0,
+                    stdout=json.dumps(scores_data)
+                )
+                mock_run.side_effect = [git_log_result, git_show_result]
                 
                 result = search_index_results_for_model("test-model")
                 assert result == "2024-01-15T10:00:00Z"
