@@ -17,6 +17,7 @@ from track_llm_support import (
     get_model_aliases,
     MODEL_ALIASES,
     check_model_in_litellm_json,
+    check_saas_verified_model,
     search_commits_for_model,
     search_sdk_for_model,
     search_frontend_for_model,
@@ -569,6 +570,7 @@ class TestOutputFormat:
                 "release_date": "2024-01-15",
                 "sdk_support_timestamp": "2024-01-20T10:00:00Z",
                 "frontend_support_timestamp": None,
+                "frontend_saas_available": False,
                 "index_results_timestamp": None,
                 "eval_proxy_timestamp": None,
                 "prod_proxy_timestamp": None,
@@ -586,6 +588,7 @@ class TestOutputFormat:
             assert "release_date" in loaded
             assert "sdk_support_timestamp" in loaded
             assert "frontend_support_timestamp" in loaded
+            assert "frontend_saas_available" in loaded
             assert "index_results_timestamp" in loaded
             assert "eval_proxy_timestamp" in loaded
             assert "prod_proxy_timestamp" in loaded
@@ -650,6 +653,60 @@ class TestLitellmTimestampLogic:
         # Test case 4: All None
         result = find_earliest([None, None, None])
         assert result is None
+
+
+class TestCheckSaasVerifiedModel:
+    """Tests for check_saas_verified_model function."""
+
+    @patch("track_llm_support.requests.get")
+    def test_model_found_in_saas(self, mock_get):
+        """Test that a model in the openhands provider list returns True."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "anthropic/claude-opus-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "openhands/gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("claude-opus-4-5")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_model_not_found_in_saas(self, mock_get):
+        """Test that a model not in the openhands provider list returns False."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "anthropic/claude-opus-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "openhands/gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            # claude-opus-4-6 is in anthropic/ but NOT in openhands/
+            result = check_saas_verified_model("claude-opus-4-6")
+            assert result is False
+
+    def test_no_api_key_returns_false(self):
+        """Test that missing LLM_API_KEY returns False."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Ensure LLM_API_KEY is not set
+            os.environ.pop("LLM_API_KEY", None)
+            result = check_saas_verified_model("any-model")
+            assert result is False
+
+    @patch("track_llm_support.requests.get")
+    def test_api_error_returns_false(self, mock_get):
+        """Test that API errors return False."""
+        mock_get.side_effect = Exception("API error")
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("any-model")
+            assert result is False
 
 
 if __name__ == "__main__":
