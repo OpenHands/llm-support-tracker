@@ -1215,6 +1215,7 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
         "tier": get_model_tier(model_id),
         "sdk_support_timestamp": None,
         "frontend_support_timestamp": None,
+        "frontend_saas_available": False,
         "index_results_timestamp": None,
         "eval_proxy_timestamp": None,
         "prod_proxy_timestamp": None,
@@ -1302,6 +1303,7 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     # 2. SaaS verified_models database (for app.all-hands.dev)
     print(f"Checking if {model_id} is in SaaS verified models...")
     saas_available = check_saas_verified_model(model_id)
+    result["frontend_saas_available"] = saas_available
 
     # Only set frontend_support_timestamp if model is available in both places
     if frontend_code_timestamp and saas_available:
