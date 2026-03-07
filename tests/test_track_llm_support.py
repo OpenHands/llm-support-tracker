@@ -17,6 +17,7 @@ from track_llm_support import (
     get_model_aliases,
     MODEL_ALIASES,
     check_model_in_litellm_json,
+    check_saas_verified_model,
     search_commits_for_model,
     search_sdk_for_model,
     search_frontend_for_model,
@@ -227,7 +228,6 @@ class TestSearchIndexResultsForModel:
     @patch("track_llm_support._get_index_results_repo")
     def test_search_index_results_success(self, mock_get_repo):
         """Test successful index results folder search with complete benchmarks."""
-        import subprocess
         
         # Create a mock temp directory structure
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -250,12 +250,19 @@ class TestSearchIndexResultsForModel:
             
             mock_get_repo.return_value = {"temp_dir": temp_dir}
             
-            # Mock subprocess.run to return a date
+            # Mock subprocess.run - first call is git log, second is git show
             with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(
+                # First call: git log returns commit sha and date
+                git_log_result = MagicMock(
                     returncode=0,
-                    stdout="2024-01-15T10:00:00Z"
+                    stdout="abc123 2024-01-15T10:00:00Z"
                 )
+                # Second call: git show returns the scores.json content
+                git_show_result = MagicMock(
+                    returncode=0,
+                    stdout=json.dumps(scores_data)
+                )
+                mock_run.side_effect = [git_log_result, git_show_result]
                 
                 result = search_index_results_for_model("test-model")
                 assert result == "2024-01-15T10:00:00Z"
@@ -491,15 +498,17 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.check_saas_verified_model")
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_all_found(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        self, mock_search_sdk, mock_search_frontend, mock_check_saas, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_get_repo
     ):
         """Test tracking when model is found in all repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
-        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # Frontend code
+        mock_check_saas.return_value = True  # Also in SaaS database
         mock_search_index.return_value = "2024-02-05T10:00:00Z"
         mock_search_infra.side_effect = [
             "2024-02-01T10:00:00Z",  # Eval proxy
@@ -520,23 +529,27 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["release_date"] == "2024-01-15"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
+        # frontend_support_timestamp is set only when BOTH code and SaaS are available
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
         assert result["eval_proxy_timestamp"] == "2024-02-01T10:00:00Z"
         assert result["prod_proxy_timestamp"] == "2024-02-03T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
         assert result["litellm_support_timestamp"] == "2024-01-18T10:00:00Z"
 
+    @patch("track_llm_support.check_saas_verified_model")
     @patch("track_llm_support.find_litellm_versions_supporting_model")
     @patch("track_llm_support.search_infra_proxy")
     @patch("track_llm_support.search_index_results_for_model")
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_partial(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, mock_find_versions
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_check_saas
     ):
         """Test tracking when model is only found in some repositories."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"  # SDK
         mock_search_frontend.return_value = None  # Frontend
+        mock_check_saas.return_value = False  # Not in SaaS
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]  # Eval and Prod proxy
         mock_find_versions.return_value = []  # No litellm versions support this model
@@ -550,6 +563,29 @@ class TestTrackLlmSupport:
         assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
         assert result["litellm_support_timestamp"] is None
+
+    @patch("track_llm_support.check_saas_verified_model")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
+    @patch("track_llm_support.search_infra_proxy")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
+    def test_track_llm_support_frontend_code_only(
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        mock_find_versions, mock_check_saas
+    ):
+        """Test that frontend_support_timestamp is None when only in code but not SaaS."""
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # In code
+        mock_check_saas.return_value = False  # NOT in SaaS database
+        mock_search_index.return_value = None
+        mock_search_infra.side_effect = [None, None]
+        mock_find_versions.return_value = []
+
+        result = track_llm_support("test-model", "2024-01-15")
+
+        # frontend_support_timestamp should be None because model is not in SaaS
+        assert result["frontend_support_timestamp"] is None
 
 
 class TestOutputFormat:
@@ -650,6 +686,60 @@ class TestLitellmTimestampLogic:
         # Test case 4: All None
         result = find_earliest([None, None, None])
         assert result is None
+
+
+class TestCheckSaasVerifiedModel:
+    """Tests for check_saas_verified_model function."""
+
+    @patch("track_llm_support.requests.get")
+    def test_model_found_in_saas(self, mock_get):
+        """Test that a model in the openhands provider list returns True."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "anthropic/claude-opus-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "openhands/gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("claude-opus-4-5")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_model_not_found_in_saas(self, mock_get):
+        """Test that a model not in the openhands provider list returns False."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "anthropic/claude-opus-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "openhands/gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            # claude-opus-4-6 is in anthropic/ but NOT in openhands/
+            result = check_saas_verified_model("claude-opus-4-6")
+            assert result is False
+
+    def test_no_api_key_returns_false(self):
+        """Test that missing LLM_API_KEY returns False."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Ensure LLM_API_KEY is not set
+            os.environ.pop("LLM_API_KEY", None)
+            result = check_saas_verified_model("any-model")
+            assert result is False
+
+    @patch("track_llm_support.requests.get")
+    def test_api_error_returns_false(self, mock_get):
+        """Test that API errors return False."""
+        mock_get.side_effect = Exception("API error")
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("any-model")
+            assert result is False
 
 
 if __name__ == "__main__":
