@@ -6,7 +6,7 @@ triggers:
 - add new model
 - tier 1 model
 - model aliases
-- saas model
+- cloud model
 - verified model
 ---
 
@@ -20,7 +20,7 @@ The LLM Support Tracker monitors when language models are supported across the O
 
 1. `scripts/run_all_models.py` - Add the model to `MODEL_RELEASE_DATES` (required)
 2. `scripts/track_llm_support.py` - Add aliases to `MODEL_ALIASES` (if needed)
-3. **SaaS Database** - Add the model via Admin API for app.all-hands.dev availability (see below)
+3. **Cloud Database** - Add the model via Admin API for app.all-hands.dev availability (see below)
 
 ## Key Components
 
