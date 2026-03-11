@@ -54,10 +54,9 @@ class TestModelAliases:
             # Check no exact duplicates (case-sensitive is OK since git search is case-sensitive)
             assert len(aliases) == len(set(aliases)), f"Exact duplicates found for {model_id}"
 
-    def test_claude_sonnet_4_6_no_frontend_alias(self):
-        """claude-sonnet-4-6 should not have frontend alias (not yet in frontend)."""
+    def test_claude_sonnet_4_6_no_additional_aliases(self):
+        """claude-sonnet-4-6 uses the same name across systems, so no extra aliases are needed."""
         aliases = get_model_aliases("claude-sonnet-4-6")
-        # Should only have the model ID itself
         assert aliases == ["claude-sonnet-4-6"]
         # Should NOT contain claude-sonnet-4-5 related aliases
         for alias in aliases:
@@ -708,11 +707,29 @@ class TestCheckSaasVerifiedModel:
             assert result is True
 
     @patch("track_llm_support.requests.get")
+    def test_model_found_in_saas_with_bare_name(self, mock_get):
+        """Test that a bare verified model name from the SaaS API returns True."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "claude-sonnet-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("claude-sonnet-4-6")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
     def test_model_not_found_in_saas(self, mock_get):
-        """Test that a model not in the openhands provider list returns False."""
+        """Test that non-OpenHands provider entries do not count as SaaS support."""
         mock_response = MagicMock()
         mock_response.json.return_value = [
             "anthropic/claude-opus-4-6",
+            "zai.glm-4.7",
+            "openrouter/z-ai/glm-4.7",
             "openhands/claude-opus-4-5-20251101",
             "openhands/gpt-5.2",
         ]
@@ -720,7 +737,7 @@ class TestCheckSaasVerifiedModel:
         mock_get.return_value = mock_response
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
-            # claude-opus-4-6 is in anthropic/ but NOT in openhands/
+            # claude-opus-4-6 is only exposed via anthropic/ here, not OpenHands
             result = check_saas_verified_model("claude-opus-4-6")
             assert result is False
 

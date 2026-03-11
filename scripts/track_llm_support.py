@@ -563,16 +563,36 @@ def check_saas_verified_model(model_id: str) -> bool:
         response.raise_for_status()
         models = response.json()
         
-        # Get all known aliases for this model
-        aliases = get_model_aliases(model_id)
-        
-        # Check if any alias appears in the openhands provider models
+        # The SaaS API may return OpenHands models as either:
+        # - openhands/model-name
+        # - bare model-name (as shown in the settings UI)
+        # Match the canonical ID plus frontend-style aliases, but ignore
+        # provider-specific LiteLLM aliases.
+        model_lower = model_id.lower()
+        saas_aliases = {model_lower}
+        for alias in get_model_aliases(model_id):
+            alias_lower = alias.lower()
+            if alias_lower == model_lower:
+                continue
+            if "/" in alias_lower:
+                continue
+            if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
+                continue
+            if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
+                saas_aliases.add(alias_lower)
+
         for model in models:
-            if model.startswith("openhands/"):
-                model_name = model[len("openhands/"):]
-                if model_name in aliases or model_name.lower() in [a.lower() for a in aliases]:
-                    return True
-        
+            model_lower = model.lower()
+            if model_lower.startswith("openhands/"):
+                model_name = model_lower[len("openhands/"):]
+            elif "/" not in model_lower:
+                model_name = model_lower
+            else:
+                continue
+
+            if model_name in saas_aliases:
+                return True
+
         return False
         
     except Exception as e:
