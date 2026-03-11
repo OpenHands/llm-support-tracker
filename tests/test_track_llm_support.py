@@ -528,8 +528,8 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["release_date"] == "2024-01-15"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
+        # frontend_support_timestamp is set only when BOTH code and SaaS are available
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
-        assert result["frontend_saas_available"] is True
         assert result["eval_proxy_timestamp"] == "2024-02-01T10:00:00Z"
         assert result["prod_proxy_timestamp"] == "2024-02-03T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
@@ -558,7 +558,6 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
         assert result["frontend_support_timestamp"] is None
-        assert result["frontend_saas_available"] is False
         assert result["eval_proxy_timestamp"] is None
         assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
@@ -571,21 +570,21 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_frontend_code_only(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra,
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_check_saas
     ):
-        """Frontend support should reflect repo support even before SaaS rollout."""
+        """Test that frontend_support_timestamp is None when only in code but not SaaS."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
-        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"
-        mock_check_saas.return_value = False
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # In code
+        mock_check_saas.return_value = False  # NOT in SaaS database
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]
         mock_find_versions.return_value = []
 
         result = track_llm_support("test-model", "2024-01-15")
 
-        assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
-        assert result["frontend_saas_available"] is False
+        # frontend_support_timestamp should be None because model is not in SaaS
+        assert result["frontend_support_timestamp"] is None
 
 
 class TestOutputFormat:
@@ -708,11 +707,29 @@ class TestCheckSaasVerifiedModel:
             assert result is True
 
     @patch("track_llm_support.requests.get")
+    def test_model_found_in_saas_with_bare_name(self, mock_get):
+        """Test that a bare verified model name from the SaaS API returns True."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "claude-sonnet-4-6",
+            "openhands/claude-opus-4-5-20251101",
+            "gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("claude-sonnet-4-6")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
     def test_model_not_found_in_saas(self, mock_get):
-        """Test that a model not in the openhands provider list returns False."""
+        """Test that non-OpenHands provider entries do not count as SaaS support."""
         mock_response = MagicMock()
         mock_response.json.return_value = [
             "anthropic/claude-opus-4-6",
+            "zai.glm-4.7",
+            "openrouter/z-ai/glm-4.7",
             "openhands/claude-opus-4-5-20251101",
             "openhands/gpt-5.2",
         ]
@@ -720,7 +737,7 @@ class TestCheckSaasVerifiedModel:
         mock_get.return_value = mock_response
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
-            # claude-opus-4-6 is in anthropic/ but NOT in openhands/
+            # claude-opus-4-6 is only exposed via anthropic/ here, not OpenHands
             result = check_saas_verified_model("claude-opus-4-6")
             assert result is False
 
