@@ -54,10 +54,9 @@ class TestModelAliases:
             # Check no exact duplicates (case-sensitive is OK since git search is case-sensitive)
             assert len(aliases) == len(set(aliases)), f"Exact duplicates found for {model_id}"
 
-    def test_claude_sonnet_4_6_no_frontend_alias(self):
-        """claude-sonnet-4-6 should not have frontend alias (not yet in frontend)."""
+    def test_claude_sonnet_4_6_no_additional_aliases(self):
+        """claude-sonnet-4-6 uses the same name across systems, so no extra aliases are needed."""
         aliases = get_model_aliases("claude-sonnet-4-6")
-        # Should only have the model ID itself
         assert aliases == ["claude-sonnet-4-6"]
         # Should NOT contain claude-sonnet-4-5 related aliases
         for alias in aliases:
@@ -529,8 +528,8 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["release_date"] == "2024-01-15"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
-        # frontend_support_timestamp is set only when BOTH code and SaaS are available
         assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
+        assert result["frontend_saas_available"] is True
         assert result["eval_proxy_timestamp"] == "2024-02-01T10:00:00Z"
         assert result["prod_proxy_timestamp"] == "2024-02-03T10:00:00Z"
         assert result["index_results_timestamp"] == "2024-02-05T10:00:00Z"
@@ -559,6 +558,7 @@ class TestTrackLlmSupport:
         assert result["model_id"] == "test-model"
         assert result["sdk_support_timestamp"] == "2024-01-20T10:00:00Z"
         assert result["frontend_support_timestamp"] is None
+        assert result["frontend_saas_available"] is False
         assert result["eval_proxy_timestamp"] is None
         assert result["prod_proxy_timestamp"] is None
         assert result["index_results_timestamp"] is None
@@ -571,21 +571,21 @@ class TestTrackLlmSupport:
     @patch("track_llm_support.search_frontend_for_model")
     @patch("track_llm_support.search_sdk_for_model")
     def test_track_llm_support_frontend_code_only(
-        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra,
         mock_find_versions, mock_check_saas
     ):
-        """Test that frontend_support_timestamp is None when only in code but not SaaS."""
+        """Frontend support should reflect repo support even before SaaS rollout."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
-        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # In code
-        mock_check_saas.return_value = False  # NOT in SaaS database
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"
+        mock_check_saas.return_value = False
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]
         mock_find_versions.return_value = []
 
         result = track_llm_support("test-model", "2024-01-15")
 
-        # frontend_support_timestamp should be None because model is not in SaaS
-        assert result["frontend_support_timestamp"] is None
+        assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
+        assert result["frontend_saas_available"] is False
 
 
 class TestOutputFormat:

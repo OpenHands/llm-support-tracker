@@ -230,13 +230,12 @@ Models appear as `openhands/model-name` in the response when available.
 
 ### Important Notes
 
-1. **Both required for full frontend support**: A model needs to be in BOTH:
-   - `verified-models.ts` (for self-hosted OpenHands)
-   - SaaS `verified_models` database (for app.all-hands.dev)
+1. **Frontend support is tracked from the frontend repo**: `frontend_support_timestamp`
+   reflects when a model was added to `verified-models.ts` in OpenHands/OpenHands.
 
-2. **The tracker's `frontend_support_timestamp`** is only set when a model is available in both places.
-
-3. **The tracker's `frontend_saas_available`** field indicates whether a model is currently in the SaaS database.
+2. **SaaS availability is tracked separately**: `frontend_saas_available` indicates
+   whether a model is currently in the SaaS `verified_models` database for
+   app.all-hands.dev.
 
 ## Validation Checklist
 

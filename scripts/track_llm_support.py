@@ -1296,20 +1296,17 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in OpenHands frontend...")
     frontend_code_timestamp = search_frontend_for_model(model_id)
 
-    # Check if model is currently available in SaaS verified_models database
-    # Since PR #12833, SaaS uses a database instead of verified-models.ts
-    # A model is only considered "frontend supported" when it's in BOTH:
-    # 1. verified-models.ts (for self-hosted)
-    # 2. SaaS verified_models database (for app.all-hands.dev)
+    # Check if model is currently available in the SaaS verified_models database.
+    # We track this separately from frontend_support_timestamp because the tracker
+    # UI/README define "Frontend" as support in the OpenHands frontend repo,
+    # while SaaS availability is an additional deployment signal.
     print(f"Checking if {model_id} is in SaaS verified models...")
     saas_available = check_saas_verified_model(model_id)
     result["frontend_saas_available"] = saas_available
 
-    # Only set frontend_support_timestamp if model is available in both places
-    if frontend_code_timestamp and saas_available:
-        result["frontend_support_timestamp"] = frontend_code_timestamp
-    else:
-        result["frontend_support_timestamp"] = None
+    # Frontend support reflects when the model was added to the frontend repo.
+    # SaaS availability is exposed separately via frontend_saas_available.
+    result["frontend_support_timestamp"] = frontend_code_timestamp
 
     # Search for index results using local git clone
     # Note: No adjust_timestamp_to_release - index requires explicit model additions
