@@ -49,6 +49,7 @@ MODEL_RELEASE_DATES = {
     "MiniMax-M2.5": "2026-02-01",
     # NVIDIA Nemotron models
     "Nemotron-3-Nano": "2025-10-01",
+    "Nemotron-3-Super": "2026-03-11",
     # OpenAI GPT models
     "GPT-5.2": "2025-12-11",
     "GPT-5.2-Codex": "2025-12-18",

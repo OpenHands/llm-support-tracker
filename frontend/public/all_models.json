@@ -168,6 +168,18 @@
     "litellm_support_timestamp": "2026-02-16T17:05:53-08:00"
   },
   {
+    "model_id": "Nemotron-3-Super",
+    "release_date": "2026-03-11",
+    "tier": 2,
+    "sdk_support_timestamp": "2026-03-11T18:19:18-03:00",
+    "frontend_support_timestamp": null,
+    "frontend_saas_available": false,
+    "index_results_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
+    "litellm_support_timestamp": null
+  },
+  {
     "model_id": "Qwen3-Coder-480B",
     "release_date": "2025-07-23",
     "tier": 1,
