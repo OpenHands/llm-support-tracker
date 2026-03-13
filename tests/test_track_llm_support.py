@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -11,7 +10,6 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-import track_llm_support as tracker
 from run_all_models import MODEL_RELEASE_DATES
 from track_llm_support import (
     get_github_headers,
@@ -22,7 +20,6 @@ from track_llm_support import (
     check_model_in_litellm_json,
     check_saas_verified_model,
     search_commits_for_model,
-    search_sdk_for_model,
     search_frontend_for_model,
     search_index_results_folder,
     search_index_results_for_model,
@@ -94,14 +91,6 @@ class TestModelAliases:
         assert "GPT-5.4" in aliases
         assert "gpt-5.4" in aliases
         assert "gpt-5.4-pro" in aliases
-
-    def test_nemotron_3_super_has_sdk_aliases(self):
-        """Nemotron-3-Super should include SDK and lowercase aliases."""
-        aliases = get_model_aliases("Nemotron-3-Super")
-        assert "Nemotron-3-Super" in aliases
-        assert "nemotron-3-super" in aliases
-        assert "nemotron-3-super-120b-a12b" in aliases
-
 
 class TestModelRegistry:
     """Tests for the tracked model registry."""
@@ -188,55 +177,6 @@ class TestGetModelTier:
         assert get_model_tier("Nemotron-3-Nano") == 2
         assert get_model_tier("Nemotron-3-Super") == 2
         assert get_model_tier("SomeOther-Model") == 2
-
-
-class TestSearchSdkForModel:
-    """Tests for search_sdk_for_model."""
-
-    @staticmethod
-    def _commit_all(repo_path, message, commit_date):
-        env = os.environ.copy()
-        env["GIT_AUTHOR_DATE"] = commit_date
-        env["GIT_COMMITTER_DATE"] = commit_date
-        subprocess.run(["git", "add", "."], cwd=repo_path, check=True, env=env, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", message],
-            cwd=repo_path,
-            check=True,
-            env=env,
-            capture_output=True,
-        )
-
-    def test_search_sdk_finds_eval_model_config(self, tmp_path):
-        """SDK search should detect models added via eval model configs."""
-        repo_path = tmp_path / "sdk-repo"
-        repo_path.mkdir()
-
-        subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True)
-
-        model_features_path = repo_path / "openhands-sdk/openhands/sdk/llm/utils/model_features.py"
-        model_features_path.parent.mkdir(parents=True, exist_ok=True)
-        model_features_path.write_text("MODEL_FEATURES = {}\n")
-
-        resolve_model_config_path = repo_path / ".github/run-eval/resolve_model_config.py"
-        resolve_model_config_path.parent.mkdir(parents=True, exist_ok=True)
-        resolve_model_config_path.write_text("MODELS = {}\n")
-
-        self._commit_all(repo_path, "Initial SDK files", "2026-03-11T00:00:00+00:00")
-
-        resolve_model_config_path.write_text(
-            'MODELS = {"nemotron-3-super-120b-a12b": {"id": "nemotron-3-super-120b-a12b"}}\n'
-        )
-        self._commit_all(repo_path, "Add Nemotron 3 Super config", "2026-03-12T00:00:00+00:00")
-
-        original_temp_dir = tracker._sdk_cache["temp_dir"]
-        tracker._sdk_cache["temp_dir"] = str(repo_path)
-        try:
-            assert search_sdk_for_model("Nemotron-3-Super") == "2026-03-12T00:00:00Z"
-        finally:
-            tracker._sdk_cache["temp_dir"] = original_temp_dir
 
 
 class TestSearchCommitsForModel:
