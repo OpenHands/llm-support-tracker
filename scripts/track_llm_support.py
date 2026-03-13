@@ -33,6 +33,7 @@ TIER_1_PATTERNS = [
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
     r"^MiniMax-M2\.5$",      # MiniMax-M2.5 only (M2.1 superseded before frontend support)
     r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
+    r"^Nemotron-3-Super$",   # Nemotron-3-Super only
 ]
 
 # Global model aliases map.

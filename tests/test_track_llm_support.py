@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
+from run_all_models import MODEL_RELEASE_DATES
 from track_llm_support import (
     get_github_headers,
     get_litellm_model_search_terms,
@@ -19,7 +20,6 @@ from track_llm_support import (
     check_model_in_litellm_json,
     check_saas_verified_model,
     search_commits_for_model,
-    search_sdk_for_model,
     search_frontend_for_model,
     search_index_results_folder,
     search_index_results_for_model,
@@ -92,6 +92,13 @@ class TestModelAliases:
         assert "gpt-5.4" in aliases
         assert "gpt-5.4-pro" in aliases
 
+class TestModelRegistry:
+    """Tests for the tracked model registry."""
+
+    def test_nemotron_3_super_release_date(self):
+        """Nemotron-3-Super should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["Nemotron-3-Super"] == "2026-03-11"
+
 
 class TestGetGithubHeaders:
     """Tests for get_github_headers function."""
@@ -163,6 +170,10 @@ class TestGetModelTier:
         """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
         assert get_model_tier("Kimi-K2.5") == 1
         assert get_model_tier("Kimi-K2-Thinking") == 2  # Superseded before frontend support
+
+    def test_nemotron_3_super_is_tier_1(self):
+        """Nemotron-3-Super should be tier 1."""
+        assert get_model_tier("Nemotron-3-Super") == 1
 
     def test_other_models_are_tier_2(self):
         """Non-priority models should be tier 2."""
