@@ -171,11 +171,14 @@ class TestGetModelTier:
         assert get_model_tier("Kimi-K2.5") == 1
         assert get_model_tier("Kimi-K2-Thinking") == 2  # Superseded before frontend support
 
+    def test_nemotron_3_super_is_tier_1(self):
+        """Nemotron-3-Super should be tier 1."""
+        assert get_model_tier("Nemotron-3-Super") == 1
+
     def test_other_models_are_tier_2(self):
         """Non-priority models should be tier 2."""
         assert get_model_tier("DeepSeek-V3.2-Reasoner") == 2
         assert get_model_tier("Nemotron-3-Nano") == 2
-        assert get_model_tier("Nemotron-3-Super") == 2
         assert get_model_tier("SomeOther-Model") == 2
 
 
