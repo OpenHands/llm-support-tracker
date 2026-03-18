@@ -92,12 +92,24 @@ class TestModelAliases:
         assert "gpt-5.4" in aliases
         assert "gpt-5.4-pro" in aliases
 
+    def test_minimax_m27_has_aliases(self):
+        """MiniMax-M2.7 should have lowercase and LiteLLM aliases."""
+        aliases = get_model_aliases("MiniMax-M2.7")
+        assert "MiniMax-M2.7" in aliases
+        assert "minimax-m2.7" in aliases
+        assert "minimax/MiniMax-M2.7" in aliases
+        assert "openrouter/minimax/minimax-m2.7" in aliases
+
 class TestModelRegistry:
     """Tests for the tracked model registry."""
 
     def test_nemotron_3_super_release_date(self):
         """Nemotron-3-Super should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["Nemotron-3-Super"] == "2026-03-11"
+
+    def test_minimax_m27_release_date(self):
+        """MiniMax-M2.7 should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["MiniMax-M2.7"] == "2026-03-18"
 
 
 class TestGetGithubHeaders:
@@ -156,9 +168,10 @@ class TestGetModelTier:
         assert get_model_tier("GLM-4.7") == 1
         assert get_model_tier("GLM-5") == 1
 
-    def test_minimax_m25_is_tier_1(self):
-        """MiniMax-M2.5 should be tier 1 (M2.1 was superseded before frontend support)."""
+    def test_minimax_m25_m27_is_tier_1(self):
+        """MiniMax-M2.5 and M2.7 should be tier 1 (M2.1 was superseded before frontend support)."""
         assert get_model_tier("MiniMax-M2.5") == 1
+        assert get_model_tier("MiniMax-M2.7") == 1
         assert get_model_tier("MiniMax-M2.1") == 2  # Superseded before frontend support
 
     def test_qwen3_coder_is_tier_1(self):
