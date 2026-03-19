@@ -47,6 +47,7 @@ MODEL_RELEASE_DATES = {
     # MiniMax models
     "MiniMax-M2.1": "2025-09-01",
     "MiniMax-M2.5": "2026-02-01",
+    "MiniMax-M2.7": "2026-03-18",
     # NVIDIA Nemotron models
     "Nemotron-3-Nano": "2025-10-01",
     "Nemotron-3-Super": "2026-03-11",

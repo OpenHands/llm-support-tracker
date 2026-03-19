@@ -31,7 +31,7 @@ TIER_1_PATTERNS = [
     r"^GPT-5",               # GPT-5*
     r"^GLM-",                # GLM
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
-    r"^MiniMax-M2\.5$",      # MiniMax-M2.5 only (M2.1 superseded before frontend support)
+    r"^MiniMax-M2\.[57]$",   # MiniMax-M2.5 and M2.7 (M2.1 superseded before frontend support)
     r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
     r"^Nemotron-3-Super$",   # Nemotron-3-Super only
 ]
@@ -123,6 +123,11 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "minimax-m2.5",                  # Frontend verified-models.ts
         "minimax/MiniMax-M2.5",          # LiteLLM naming
         "openrouter/minimax/minimax-m2.5",
+    ],
+    "MiniMax-M2.7": [
+        "minimax-m2.7",                  # Lowercase variant
+        "minimax/MiniMax-M2.7",          # LiteLLM naming
+        "openrouter/minimax/minimax-m2.7",
     ],
     # NVIDIA Nemotron models
     "Nemotron-3-Nano": [
