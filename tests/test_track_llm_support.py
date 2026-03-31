@@ -782,6 +782,43 @@ class TestCheckSaasVerifiedModel:
             result = check_saas_verified_model("any-model")
             assert result is False
 
+    @patch("track_llm_support.requests.get")
+    def test_gpt_54_pro_variant_found_in_saas(self, mock_get):
+        """Test that GPT-5.4-pro variant is found when SaaS returns openhands/gpt-5.4-pro.
+        
+        This tests the fix for issue #48 where GPT-5.4 appeared as not found
+        even though it was in the frontend.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/gpt-5.4-pro",  # SaaS returns the -pro variant
+            "openhands/gpt-5.2",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GPT-5.4")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_model_with_code_variant_found_in_saas(self, mock_get):
+        """Test that models with code variants (e.g., GLM-5-code) are found.
+        
+        This tests the fix for issue #48 where GLM-5 appeared as not found
+        even though it was in the frontend.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/glm-5",  # SaaS returns bare name
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GLM-5")
+            assert result is True
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

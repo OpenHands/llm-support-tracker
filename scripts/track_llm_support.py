@@ -82,7 +82,7 @@ MODEL_ALIASES: dict[str, list[str]] = {
     ],
     "GPT-5.4": [
         "gpt-5.4",      # API model name
-        "gpt-5.4-pro",  # Pro variant API model name
+        "gpt-5.4-pro",  # Pro variant API model name (SaaS may return this as openhands/gpt-5.4-pro)
     ],
     # Google Gemini models
     "Gemini-3-Pro": [
@@ -584,8 +584,9 @@ def check_saas_verified_model(model_id: str) -> bool:
                 continue
             if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
                 continue
-            if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
-                saas_aliases.add(alias_lower)
+            # Add all remaining aliases - these are frontend-style variants
+            # (e.g., gpt-5.4-pro, glm-5-code, date-versioned names like claude-opus-4-5-20251101)
+            saas_aliases.add(alias_lower)
 
         for model in models:
             model_lower = model.lower()
