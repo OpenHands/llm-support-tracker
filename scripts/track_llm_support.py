@@ -31,6 +31,7 @@ TIER_1_PATTERNS = [
     r"^GPT-5",               # GPT-5*
     r"^GLM-",                # GLM
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
+    r"^Qwen3\.6-",           # Qwen3.6-* general series
     r"^MiniMax-M2\.[57]$",   # MiniMax-M2.5 and M2.7 (M2.1 superseded before frontend support)
     r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
     r"^Nemotron-3-Super$",   # Nemotron-3-Super only
@@ -142,6 +143,9 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "qwen3-coder-next",
         "qwen.qwen3-coder-next",  # LiteLLM bedrock naming
     ],
+    "Qwen3.6-Plus": [
+        "dashscope/qwen3.6-plus",  # LiteLLM DashScope naming
+    ],
 }
 
 
@@ -192,8 +196,8 @@ def get_model_tier(model_id: str) -> int:
     """
     Determine the tier of a model based on its ID.
     
-    Tier 1: Priority models (Claude Sonnet/Opus, Gemini Pro/Flash, GPT-5*, 
-            GLM, MiniMax, Qwen3-Coder-480B, Kimi-K2)
+    Tier 1: Priority models (Claude Sonnet/Opus, Gemini Pro/Flash, GPT-5*,
+            GLM, Qwen3-Coder, Qwen3.6, MiniMax, Kimi-K2)
     Tier 2: All other models
     
     Args:

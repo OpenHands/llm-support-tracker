@@ -58,6 +58,7 @@ MODEL_RELEASE_DATES = {
     # Alibaba Qwen models
     "Qwen3-Coder-480B": "2025-07-23",
     "Qwen3-Coder-Next": "2026-01-15",
+    "Qwen3.6-Plus": "2026-04-01",
 }
 
 
