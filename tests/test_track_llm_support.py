@@ -189,9 +189,9 @@ class TestGetModelTier:
         assert get_model_tier("Qwen3-Coder-480B") == 1
         assert get_model_tier("Qwen3-Coder-Next") == 1
 
-    def test_qwen36_is_tier_1(self):
-        """Qwen3.6 models should be tier 1."""
-        assert get_model_tier("Qwen3.6-Plus") == 1
+    def test_qwen36_is_tier_2(self):
+        """Qwen3.6 models should be tier 2."""
+        assert get_model_tier("Qwen3.6-Plus") == 2
 
     def test_kimi_k25_is_tier_1(self):
         """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
