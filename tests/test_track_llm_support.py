@@ -99,6 +99,13 @@ class TestModelAliases:
         assert "minimax/MiniMax-M2.7" in aliases
         assert "openrouter/minimax/minimax-m2.7" in aliases
 
+    def test_qwen36_plus_has_aliases(self):
+        """Qwen3.6-Plus should have lowercase and LiteLLM aliases."""
+        aliases = get_model_aliases("Qwen3.6-Plus")
+        assert "Qwen3.6-Plus" in aliases
+        assert "qwen3.6-plus" in aliases
+        assert "dashscope/qwen3.6-plus" in aliases
+
 class TestModelRegistry:
     """Tests for the tracked model registry."""
 
@@ -109,6 +116,10 @@ class TestModelRegistry:
     def test_minimax_m27_release_date(self):
         """MiniMax-M2.7 should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["MiniMax-M2.7"] == "2026-03-18"
+
+    def test_qwen36_plus_release_date(self):
+        """Qwen3.6-Plus should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["Qwen3.6-Plus"] == "2026-04-01"
 
 
 class TestGetGithubHeaders:
@@ -177,6 +188,10 @@ class TestGetModelTier:
         """Qwen3-Coder-* models should be tier 1."""
         assert get_model_tier("Qwen3-Coder-480B") == 1
         assert get_model_tier("Qwen3-Coder-Next") == 1
+
+    def test_qwen36_is_tier_2(self):
+        """Qwen3.6 models should be tier 2."""
+        assert get_model_tier("Qwen3.6-Plus") == 2
 
     def test_kimi_k25_is_tier_1(self):
         """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
@@ -372,6 +387,13 @@ class TestGetLitellmModelSearchTerms:
         terms = get_litellm_model_search_terms("claude-sonnet-4-5")
         assert "claude-sonnet-4-5" in terms
         assert "claude-sonnet-4-5-20250929" in terms
+
+    def test_qwen36_plus_dashscope_alias(self):
+        """Test Qwen3.6-Plus includes the LiteLLM DashScope alias."""
+        terms = get_litellm_model_search_terms("Qwen3.6-Plus")
+        assert "Qwen3.6-Plus" in terms
+        assert "qwen3.6-plus" in terms
+        assert "dashscope/qwen3.6-plus" in terms
 
 
 class TestCheckModelInLitellmJson:
