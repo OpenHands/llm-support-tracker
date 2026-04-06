@@ -804,6 +804,90 @@ class TestCheckSaasVerifiedModel:
             result = check_saas_verified_model("any-model")
             assert result is False
 
+    @patch("track_llm_support.requests.get")
+    def test_gpt54_matches_simple_alias(self, mock_get):
+        """Test that GPT-5.4 matches via its simple 'gpt-5.4' alias (not just -pro variant)."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/gpt-5.4",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GPT-5.4")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_minimax_m27_matches_simple_alias(self, mock_get):
+        """Test that MiniMax-M2.7 matches via its simple 'minimax-m2.7' alias."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/minimax-m2.7",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("MiniMax-M2.7")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_kimi_k25_matches_simple_alias(self, mock_get):
+        """Test that Kimi-K2.5 matches via its simple 'kimi-k2.5' alias."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/kimi-k2.5",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("Kimi-K2.5")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_glm47_matches_simple_alias(self, mock_get):
+        """Test that GLM-4.7 matches via its simple 'glm-4.7' alias."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/glm-4.7",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GLM-4.7")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_glm5_matches_simple_alias(self, mock_get):
+        """Test that GLM-5 matches via its simple 'glm-5' alias."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/glm-5",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GLM-5")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_qwen3_coder_next_matches_simple_alias(self, mock_get):
+        """Test that Qwen3-Coder-Next matches via its simple 'qwen3-coder-next' alias."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "openhands/qwen3-coder-next",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("Qwen3-Coder-Next")
+            assert result is True
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
