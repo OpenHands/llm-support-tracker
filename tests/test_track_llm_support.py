@@ -106,6 +106,15 @@ class TestModelAliases:
         assert "qwen3.6-plus" in aliases
         assert "dashscope/qwen3.6-plus" in aliases
 
+    def test_trinity_large_thinking_has_aliases(self):
+        """trinity-large-thinking should have title-case and OpenRouter aliases."""
+        aliases = get_model_aliases("trinity-large-thinking")
+        assert "trinity-large-thinking" in aliases
+        assert "Trinity-Large-Thinking" in aliases
+        assert "arcee-ai/trinity-large-thinking" in aliases
+        assert "openrouter/arcee-ai/trinity-large-thinking" in aliases
+
+
 class TestModelRegistry:
     """Tests for the tracked model registry."""
 
@@ -120,6 +129,10 @@ class TestModelRegistry:
     def test_qwen36_plus_release_date(self):
         """Qwen3.6-Plus should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["Qwen3.6-Plus"] == "2026-04-01"
+
+    def test_trinity_large_thinking_release_date(self):
+        """trinity-large-thinking should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["trinity-large-thinking"] == "2026-04-01"
 
 
 class TestGetGithubHeaders:
@@ -201,6 +214,11 @@ class TestGetModelTier:
     def test_nemotron_3_super_is_tier_1(self):
         """Nemotron-3-Super should be tier 1."""
         assert get_model_tier("Nemotron-3-Super") == 1
+
+    def test_trinity_large_thinking_is_tier_1(self):
+        """trinity-large-thinking should be tier 1."""
+        assert get_model_tier("trinity-large-thinking") == 1
+        assert get_model_tier("Trinity-Large-Thinking") == 1
 
     def test_other_models_are_tier_2(self):
         """Non-priority models should be tier 2."""

@@ -32,6 +32,8 @@ MODEL_RELEASE_DATES = {
     "claude-sonnet-4-6": "2026-02-20",
     "claude-opus-4-5": "2025-11-24",
     "claude-opus-4-6": "2026-02-05",
+    # Arcee AI models
+    "trinity-large-thinking": "2026-04-01",
     # DeepSeek models
     "DeepSeek-V3.2-Reasoner": "2025-12-01",
     # GLM models (Z-AI/Zhipu)
