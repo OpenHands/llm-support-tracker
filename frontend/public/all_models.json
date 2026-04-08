@@ -262,5 +262,17 @@
     "eval_proxy_timestamp": "2026-02-20T00:00:00Z",
     "prod_proxy_timestamp": "2026-02-20T00:21:29+08:00",
     "litellm_support_timestamp": "2026-02-20T00:00:00Z"
+  },
+  {
+    "model_id": "trinity-large-thinking",
+    "release_date": "2026-04-01",
+    "tier": 1,
+    "sdk_support_timestamp": null,
+    "frontend_support_timestamp": null,
+    "frontend_saas_available": false,
+    "index_results_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
+    "litellm_support_timestamp": null
   }
 ]

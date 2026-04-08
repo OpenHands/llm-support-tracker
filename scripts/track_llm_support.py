@@ -34,6 +34,7 @@ TIER_1_PATTERNS = [
     r"^MiniMax-M2\.[57]$",   # MiniMax-M2.5 and M2.7 (M2.1 superseded before frontend support)
     r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
     r"^Nemotron-3-Super$",   # Nemotron-3-Super only
+    r"^(?i:trinity-large-thinking)$",  # Arcee Trinity Large Thinking
 ]
 
 # Global model aliases map.
@@ -53,6 +54,12 @@ MODEL_ALIASES: dict[str, list[str]] = {
     ],
     "claude-opus-4-6": [
         "claude-opus-4-6",  # Frontend verified-models.ts (same name)
+    ],
+    # Arcee AI models
+    "trinity-large-thinking": [
+        "Trinity-Large-Thinking",
+        "arcee-ai/trinity-large-thinking",
+        "openrouter/arcee-ai/trinity-large-thinking",
     ],
     # DeepSeek models
     "DeepSeek-V3.2-Reasoner": [
