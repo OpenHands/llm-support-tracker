@@ -585,11 +585,17 @@ def check_saas_verified_model(model_id: str) -> bool:
                 continue
             if "/" in alias_lower:
                 continue
-            # Skip LiteLLM provider-specific prefixes (zai., moonshotai., etc.)
-            # but add ALL other simple aliases that could match SaaS model names
-            if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
-                continue
-            saas_aliases.add(alias_lower)
+            # Add aliases matching SaaS model name patterns:
+            # - Preview suffixes (e.g., "-preview")
+            # - Date-stamped versions (e.g., "-251222")
+            # These are the standard formats used in the frontend verified-models.ts
+            if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
+                saas_aliases.add(alias_lower)
+            # Also add the simple lowercase model ID itself for models with mixed case
+            # (e.g., "claude-opus-4-6" -> "claude-opus-4-6") to ensure they match
+            # even without -preview or date suffixes
+            elif model_id != model_lower and alias_lower == model_lower:
+                saas_aliases.add(alias_lower)
 
         for model in models:
             model_lower = model.lower()
