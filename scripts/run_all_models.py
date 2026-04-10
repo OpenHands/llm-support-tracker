@@ -39,6 +39,7 @@ MODEL_RELEASE_DATES = {
     # GLM models (Z-AI/Zhipu)
     "GLM-4.7": "2025-10-01",
     "GLM-5": "2026-02-01",
+    "GLM-5.1": "2026-04-10",
     # Google Gemini models
     "Gemini-3-Pro": "2025-11-18",
     "Gemini-3-Flash": "2025-12-17",
