@@ -36,6 +36,18 @@
     "litellm_support_timestamp": "2026-03-06T22:56:14+05:30"
   },
   {
+    "model_id": "GLM-5.1",
+    "release_date": "2026-04-10",
+    "tier": 1,
+    "sdk_support_timestamp": null,
+    "frontend_support_timestamp": null,
+    "frontend_saas_available": false,
+    "index_results_timestamp": null,
+    "eval_proxy_timestamp": null,
+    "prod_proxy_timestamp": null,
+    "litellm_support_timestamp": null
+  },
+  {
     "model_id": "GPT-5.2",
     "release_date": "2025-12-11",
     "tier": 1,
