@@ -134,6 +134,10 @@ class TestModelRegistry:
         """trinity-large-thinking should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["trinity-large-thinking"] == "2026-04-01"
 
+    def test_glm_51_release_date(self):
+        """GLM-5.1 should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["GLM-5.1"] == "2026-04-10"
+
 
 class TestGetGithubHeaders:
     """Tests for get_github_headers function."""
@@ -190,6 +194,7 @@ class TestGetModelTier:
         """GLM models should be tier 1."""
         assert get_model_tier("GLM-4.7") == 1
         assert get_model_tier("GLM-5") == 1
+        assert get_model_tier("GLM-5.1") == 1
 
     def test_minimax_m25_m27_is_tier_1(self):
         """MiniMax-M2.5 and M2.7 should be tier 1 (M2.1 was superseded before frontend support)."""
@@ -381,6 +386,13 @@ class TestGetLitellmModelSearchTerms:
         terms = get_litellm_model_search_terms("GLM-5")
         assert "GLM-5" in terms
         assert "zai/glm-5" in terms
+
+    def test_glm51_alias(self):
+        """Test GLM-5.1 returns model ID and aliases."""
+        terms = get_litellm_model_search_terms("GLM-5.1")
+        assert "GLM-5.1" in terms
+        assert "glm-5.1" in terms
+        assert "zai/glm-5.1" in terms
 
     def test_gemini_3_pro_alias(self):
         """Test Gemini-3-Pro returns model ID and preview suffix alias."""

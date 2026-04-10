@@ -80,6 +80,12 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "zai/glm-5-code",        # Code variant
         "openrouter/z-ai/glm-5",
     ],
+    "GLM-5.1": [
+        "glm-5.1",
+        "zai/glm-5.1",          # LiteLLM direct naming
+        "zai/glm-5.1-code",     # Code variant
+        "openrouter/z-ai/glm-5.1",
+    ],
     # OpenAI GPT models
     "GPT-5.2": [
         "gpt-5.2",  # Frontend verified-models.ts
