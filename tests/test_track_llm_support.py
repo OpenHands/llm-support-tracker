@@ -140,7 +140,7 @@ class TestModelRegistry:
 
     def test_claude_opus_47_release_date(self):
         """claude-opus-4-7 should be tracked with the official release date."""
-        assert MODEL_RELEASE_DATES["claude-opus-4-7"] == "2026-04-14"
+        assert MODEL_RELEASE_DATES["claude-opus-4-7"] == "2026-04-16"
 
 
 class TestGetGithubHeaders:
