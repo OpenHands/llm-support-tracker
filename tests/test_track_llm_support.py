@@ -138,6 +138,10 @@ class TestModelRegistry:
         """GLM-5.1 should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["GLM-5.1"] == "2026-04-10"
 
+    def test_claude_opus_47_release_date(self):
+        """claude-opus-4-7 should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["claude-opus-4-7"] == "2026-04-16"
+
 
 class TestGetGithubHeaders:
     """Tests for get_github_headers function."""
@@ -174,6 +178,7 @@ class TestGetModelTier:
         """Claude Opus models should be tier 1."""
         assert get_model_tier("claude-opus-4-5") == 1
         assert get_model_tier("claude-opus-4-6") == 1
+        assert get_model_tier("claude-opus-4-7") == 1
 
     def test_gemini_pro_flash_is_tier_1(self):
         """Gemini Pro and Flash models should be tier 1."""

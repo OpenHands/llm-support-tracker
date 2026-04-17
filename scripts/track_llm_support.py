@@ -55,6 +55,9 @@ MODEL_ALIASES: dict[str, list[str]] = {
     "claude-opus-4-6": [
         "claude-opus-4-6",  # Frontend verified-models.ts (same name)
     ],
+    "claude-opus-4-7": [
+        # NOT YET IN FRONTEND - no aliases
+    ],
     # Arcee AI models
     "trinity-large-thinking": [
         "Trinity-Large-Thinking",
