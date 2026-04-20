@@ -114,6 +114,15 @@ class TestModelAliases:
         assert "arcee-ai/trinity-large-thinking" in aliases
         assert "openrouter/arcee-ai/trinity-large-thinking" in aliases
 
+    def test_kimi_k26_has_aliases(self):
+        """Kimi-K2.6 should have lowercase and code variants aliases."""
+        aliases = get_model_aliases("Kimi-K2.6")
+        assert "Kimi-K2.6" in aliases
+        assert "kimi-k2.6" in aliases
+        assert "kimi-k2.6-code-preview" in aliases
+        assert "kimi-k2.6-code" in aliases
+        assert "moonshot/kimi-k2.6-code-preview" in aliases
+
 
 class TestModelRegistry:
     """Tests for the tracked model registry."""
@@ -133,6 +142,10 @@ class TestModelRegistry:
     def test_trinity_large_thinking_release_date(self):
         """trinity-large-thinking should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["trinity-large-thinking"] == "2026-04-01"
+
+    def test_kimi_k26_release_date(self):
+        """Kimi-K2.6 should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["Kimi-K2.6"] == "2026-04-13"
 
     def test_glm_51_release_date(self):
         """GLM-5.1 should be tracked with the official release date."""
@@ -217,8 +230,9 @@ class TestGetModelTier:
         assert get_model_tier("Qwen3.6-Plus") == 2
 
     def test_kimi_k25_is_tier_1(self):
-        """Kimi-K2.5 should be tier 1 (K2-Thinking was superseded before frontend support)."""
+        """Kimi-K2.5 and K2.6 should be tier 1 (K2-Thinking was superseded before frontend support)."""
         assert get_model_tier("Kimi-K2.5") == 1
+        assert get_model_tier("Kimi-K2.6") == 1
         assert get_model_tier("Kimi-K2-Thinking") == 2  # Superseded before frontend support
 
     def test_nemotron_3_super_is_tier_1(self):
