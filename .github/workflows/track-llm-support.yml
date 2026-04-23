@@ -23,7 +23,7 @@ jobs:
 
       - name: Track all models
         env:
-          GITHUB_TOKEN: ${{ secrets.ALLHANDS_BOT_GITHUB_PAT }}
+          GITHUB_TOKEN: ${{ secrets.OPENHANDS_BOT_GITHUB_PAT_PUBLIC }}
         run: python scripts/run_all_models.py
 
       - name: Create Pull Request
