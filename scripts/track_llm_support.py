@@ -100,6 +100,10 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "gpt-5.4",      # API model name
         "gpt-5.4-pro",  # Pro variant API model name
     ],
+    "GPT-5.5": [
+        "gpt-5.5",      # API model name
+        "gpt-5.5-pro",  # Pro variant API model name
+    ],
     # Google Gemini models
     "Gemini-3-Pro": [
         "gemini-3-pro-preview",  # Frontend verified-models.ts

@@ -59,6 +59,7 @@ MODEL_RELEASE_DATES = {
     "GPT-5.2": "2025-12-11",
     "GPT-5.2-Codex": "2025-12-18",
     "GPT-5.4": "2026-03-05",
+    "GPT-5.5": "2026-04-23",
     # Alibaba Qwen models
     "Qwen3-Coder-480B": "2025-07-23",
     "Qwen3-Coder-Next": "2026-01-15",
