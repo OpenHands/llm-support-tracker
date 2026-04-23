@@ -91,6 +91,13 @@ class TestModelAliases:
         assert "gpt-5.4" in aliases
         assert "gpt-5.4-pro" in aliases
 
+    def test_gpt55_has_aliases(self):
+        """GPT-5.5 should have API and pro variant aliases."""
+        aliases = get_model_aliases("GPT-5.5")
+        assert "GPT-5.5" in aliases
+        assert "gpt-5.5" in aliases
+        assert "gpt-5.5-pro" in aliases
+
     def test_minimax_m27_has_aliases(self):
         """MiniMax-M2.7 should have lowercase and LiteLLM aliases."""
         aliases = get_model_aliases("MiniMax-M2.7")
@@ -141,6 +148,10 @@ class TestModelRegistry:
     def test_claude_opus_47_release_date(self):
         """claude-opus-4-7 should be tracked with the official release date."""
         assert MODEL_RELEASE_DATES["claude-opus-4-7"] == "2026-04-16"
+
+    def test_gpt55_release_date(self):
+        """GPT-5.5 should be tracked with the official release date."""
+        assert MODEL_RELEASE_DATES["GPT-5.5"] == "2026-04-23"
 
 
 class TestGetGithubHeaders:
@@ -194,6 +205,7 @@ class TestGetModelTier:
         assert get_model_tier("GPT-5.2-Codex") == 1
         assert get_model_tier("GPT-5") == 1
         assert get_model_tier("GPT-5.4") == 1
+        assert get_model_tier("GPT-5.5") == 1
 
     def test_glm_is_tier_1(self):
         """GLM models should be tier 1."""
