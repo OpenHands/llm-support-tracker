@@ -48,6 +48,7 @@ MODEL_RELEASE_DATES = {
     # Moonshot Kimi models
     "Kimi-K2-Thinking": "2025-11-06",
     "Kimi-K2.5": "2026-01-27",
+    "Kimi-K2.6": "2026-04-13",
     # MiniMax models
     "MiniMax-M2.1": "2025-09-01",
     "MiniMax-M2.5": "2026-02-01",

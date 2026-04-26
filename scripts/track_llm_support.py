@@ -32,7 +32,7 @@ TIER_1_PATTERNS = [
     r"^GLM-",                # GLM
     r"^Qwen3-Coder-",        # Qwen3-Coder-*
     r"^MiniMax-M2\.[57]$",   # MiniMax-M2.5 and M2.7 (M2.1 superseded before frontend support)
-    r"^Kimi-K2\.5$",         # Kimi-K2.5 only (K2-Thinking superseded before frontend support)
+    r"^Kimi-K2\.[56]$",       # Kimi-K2.5 and K2.6 (K2-Thinking superseded before frontend support)
     r"^Nemotron-3-Super$",   # Nemotron-3-Super only
     r"^(?i:trinity-large-thinking)$",  # Arcee Trinity Large Thinking
 ]
@@ -131,6 +131,12 @@ MODEL_ALIASES: dict[str, list[str]] = {
         "moonshot/kimi-k2.5",            # LiteLLM naming
         "moonshotai.kimi-k2.5",          # LiteLLM dot notation
         "openrouter/moonshotai/kimi-k2.5",
+    ],
+    "Kimi-K2.6": [
+        "kimi-k2.6",                    # Lowercase variant
+        "kimi-k2.6-code-preview",       # Code preview variant
+        "kimi-k2.6-code",             # Code variant
+        "moonshot/kimi-k2.6-code-preview",  # LiteLLM naming
     ],
     # MiniMax models
     "MiniMax-M2.1": [
