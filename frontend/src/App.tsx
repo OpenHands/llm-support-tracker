@@ -9,6 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { getFrontendSupportStatus } from './frontendSupport';
 
 interface ModelSupport {
   model_id: string;
@@ -16,6 +17,7 @@ interface ModelSupport {
   tier: number;
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
+  frontend_saas_available: boolean;
   index_results_timestamp: string | null;
   eval_proxy_timestamp: string | null;
   prod_proxy_timestamp: string | null;
@@ -356,6 +358,40 @@ function StatusBadge({ timestamp }: { timestamp: string | null }) {
   );
 }
 
+function FrontendStatusBadge({ model }: { model: ModelSupport }) {
+  const status = getFrontendSupportStatus(model);
+
+  if (status === 'full') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-900/50 text-green-400 border border-green-700">
+        ✓ Frontend + SaaS
+      </span>
+    );
+  }
+
+  if (status === 'frontend_only') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/40 text-blue-300 border border-blue-700/70">
+        △ Frontend only
+      </span>
+    );
+  }
+
+  if (status === 'saas_only') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-900/40 text-amber-300 border border-amber-700/70">
+        △ SaaS only
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700">
+      — Not found
+    </span>
+  );
+}
+
 function App() {
   const [models, setModels] = useState<ModelSupport[]>([]);
   const [sortField, setSortField] = useState<keyof ModelSupport>('model_id');
@@ -528,7 +564,7 @@ function App() {
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
                     onClick={() => handleSort('frontend_support_timestamp')}
                   >
-                    Frontend <SortIcon field="frontend_support_timestamp" />
+                    Frontend / SaaS <SortIcon field="frontend_support_timestamp" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-sm font-semibold text-[#c4cbda] cursor-pointer hover:bg-[#31343d]"
@@ -606,13 +642,23 @@ function App() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <StatusBadge timestamp={model.frontend_support_timestamp} />
+                        <FrontendStatusBadge model={model} />
                         {model.frontend_support_timestamp && (
                           <span className="text-xs text-[#9099ac]">
                             {formatDate(model.frontend_support_timestamp)}
                             <span className="ml-1 text-blue-400">
                               ({getDaysDiff(model.frontend_support_timestamp, model.release_date)})
                             </span>
+                          </span>
+                        )}
+                        {model.frontend_support_timestamp && !model.frontend_saas_available && (
+                          <span className="text-xs text-blue-300">
+                            Self-hosted frontend support confirmed; SaaS availability not confirmed
+                          </span>
+                        )}
+                        {!model.frontend_support_timestamp && model.frontend_saas_available && (
+                          <span className="text-xs text-amber-300">
+                            Currently available in SaaS; self-hosted timestamp not found
                           </span>
                         )}
                       </div>
@@ -667,10 +713,11 @@ function App() {
             </p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
-            <h3 className="text-sm font-medium text-[#9099ac]">Frontend</h3>
+            <h3 className="text-sm font-medium text-[#9099ac]">Frontend / SaaS</h3>
             <p className="text-2xl font-bold text-green-400 mt-1">
-              {models.filter((m) => m.frontend_support_timestamp).length}
+              {models.filter((m) => getFrontendSupportStatus(m) !== 'not_found').length}
             </p>
+            <p className="text-xs text-[#9099ac] mt-1">Includes SaaS-only availability</p>
           </div>
           <div className="bg-[#1f2228] rounded-lg border border-[#3c3c4a] p-4">
             <h3 className="text-sm font-medium text-[#9099ac]">Index Results</h3>

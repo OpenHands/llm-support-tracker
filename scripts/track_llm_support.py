@@ -567,72 +567,184 @@ def search_frontend_for_model(model_id: str) -> Optional[str]:
         return None
 
 
-def check_saas_verified_model(model_id: str) -> bool:
+def _extract_saas_model_names(payload) -> Optional[list[str]]:
+    """Extract model identifiers from supported SaaS API response shapes."""
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, str)]
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("verified_models"), list):
+            return [item for item in payload["verified_models"] if isinstance(item, str)]
+
+        if isinstance(payload.get("models"), list):
+            return [item for item in payload["models"] if isinstance(item, str)]
+
+        if isinstance(payload.get("items"), list):
+            models = []
+            for item in payload["items"]:
+                if not isinstance(item, dict):
+                    continue
+                provider = item.get("provider")
+                name = item.get("name")
+                if provider and name:
+                    models.append(f"{provider}/{name}")
+                elif name:
+                    models.append(name)
+            return models
+
+    return None
+
+
+def _fetch_json_payload(url: str, headers: dict, params: dict | None = None):
+    """Fetch JSON from a SaaS endpoint, rejecting HTML/app-shell responses."""
+    response = requests.get(url, headers=headers, params=params, timeout=30)
+    response.raise_for_status()
+
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" not in content_type and not response.text.lstrip().startswith(("[", "{")):
+        raise ValueError(
+            f"non-JSON response from {response.url} ({content_type or 'unknown content-type'})"
+        )
+
+    return response.json()
+
+
+def _fetch_saas_models_v1(headers: dict) -> list[str]:
+    """Fetch SaaS OpenHands-provider models from the v1 config API."""
+    models = []
+    page_id = None
+
+    for _ in range(20):
+        params = {"provider__eq": "openhands", "limit": 100}
+        if page_id:
+            params["page_id"] = page_id
+
+        payload = _fetch_json_payload(
+            "https://app.all-hands.dev/api/v1/config/models/search",
+            headers,
+            params=params,
+        )
+        page_models = _extract_saas_model_names(payload)
+        if page_models is None:
+            raise ValueError("unsupported JSON payload shape from /api/v1/config/models/search")
+
+        models.extend(page_models)
+
+        if not isinstance(payload, dict):
+            break
+        page_id = payload.get("next_page_id")
+        if not page_id:
+            break
+    else:
+        raise ValueError("too many pages returned from /api/v1/config/models/search")
+
+    return models
+
+
+def _fetch_saas_models() -> Optional[list[str]]:
+    """Fetch the current SaaS model list, returning None when it cannot be confirmed."""
+    api_keys = [
+        ("OPENHANDS_CLOUD_API_KEY", os.environ.get("OPENHANDS_CLOUD_API_KEY")),
+        ("LLM_API_KEY", os.environ.get("LLM_API_KEY")),
+    ]
+    api_keys = [(name, value) for name, value in api_keys if value]
+
+    if not api_keys:
+        print(
+            "Warning: no API key available, cannot confirm SaaS verified models",
+            file=sys.stderr,
+        )
+        return None
+
+    legacy_urls = [
+        "https://app.all-hands.dev/api/options/models",
+        "https://app.all-hands.dev/api/public/options/models",
+    ]
+
+    last_error = None
+    for _key_name, api_key in api_keys:
+        headers_list = [
+            {"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            {"X-Access-Token": api_key, "Accept": "application/json"},
+        ]
+
+        for headers in headers_list:
+            try:
+                models = _fetch_saas_models_v1(headers)
+                if models:
+                    return models
+                last_error = "empty model list from /api/v1/config/models/search"
+            except Exception as exc:
+                last_error = str(exc)
+
+            for url in legacy_urls:
+                try:
+                    payload = _fetch_json_payload(url, headers)
+                    models = _extract_saas_model_names(payload)
+                    if models is not None:
+                        return models
+                    last_error = f"unsupported JSON payload shape from {url}"
+                except Exception as exc:
+                    last_error = str(exc)
+                    continue
+
+    if last_error:
+        print(f"Warning: Error checking SaaS verified models: {last_error}", file=sys.stderr)
+    return None
+
+
+def check_saas_verified_model(model_id: str) -> Optional[bool]:
     """
     Check if a model is currently in the SaaS verified_models database.
-    
-    Queries the app.all-hands.dev API to check if the model appears in the
+
+    Queries the app.all-hands.dev APIs to check if the model appears in the
     openhands provider's model list. This indicates the model is available
     in the production SaaS dropdown.
-    
-    Requires LLM_API_KEY environment variable to be set.
-    
+
+    Returns ``None`` when the live SaaS model list cannot be confirmed.
+
     Args:
         model_id: The language model ID to check
-        
+
     Returns:
-        True if model is in the SaaS verified models, False otherwise
+        True if model is in the SaaS verified models, False if confirmed absent,
+        or None if the SaaS model list could not be fetched.
     """
-    api_key = os.environ.get("LLM_API_KEY")
-    if not api_key:
-        print("Warning: LLM_API_KEY not set, cannot check SaaS verified models", 
-              file=sys.stderr)
-        return False
-    
-    try:
-        response = requests.get(
-            "https://app.all-hands.dev/api/options/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30,
-        )
-        response.raise_for_status()
-        models = response.json()
-        
-        # The SaaS API may return OpenHands models as either:
-        # - openhands/model-name
-        # - bare model-name (as shown in the settings UI)
-        # Match the canonical ID plus frontend-style aliases, but ignore
-        # provider-specific LiteLLM aliases.
-        model_lower = model_id.lower()
-        saas_aliases = {model_lower}
-        for alias in get_model_aliases(model_id):
-            alias_lower = alias.lower()
-            if alias_lower == model_lower:
-                continue
-            if "/" in alias_lower:
-                continue
-            if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
-                continue
-            if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
-                saas_aliases.add(alias_lower)
+    models = _fetch_saas_models()
+    if models is None:
+        return None
 
-        for model in models:
-            model_lower = model.lower()
-            if model_lower.startswith("openhands/"):
-                model_name = model_lower[len("openhands/"):]
-            elif "/" not in model_lower:
-                model_name = model_lower
-            else:
-                continue
+    # The SaaS API may return OpenHands models as either:
+    # - openhands/model-name
+    # - bare model-name (as shown in the settings UI)
+    # Match the canonical ID plus frontend-style aliases, but ignore
+    # provider-specific LiteLLM aliases.
+    model_lower = model_id.lower()
+    saas_aliases = {model_lower}
+    for alias in get_model_aliases(model_id):
+        alias_lower = alias.lower()
+        if alias_lower == model_lower:
+            continue
+        if "/" in alias_lower:
+            continue
+        if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
+            continue
+        if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
+            saas_aliases.add(alias_lower)
 
-            if model_name in saas_aliases:
-                return True
+    for model in models:
+        model_lower = model.lower()
+        if model_lower.startswith("openhands/"):
+            model_name = model_lower[len("openhands/"):]
+        elif "/" not in model_lower:
+            model_name = model_lower
+        else:
+            continue
 
-        return False
-        
-    except Exception as e:
-        print(f"Warning: Error checking SaaS verified models: {e}", file=sys.stderr)
-        return False
+        if model_name in saas_aliases:
+            return True
+
+    return False
 
 
 # Module-level cache for litellm repo
@@ -1351,20 +1463,16 @@ def track_llm_support(model_id: str, release_date: str) -> dict:
     print(f"Searching for {model_id} in OpenHands frontend...")
     frontend_code_timestamp = search_frontend_for_model(model_id)
 
-    # Check if model is currently available in SaaS verified_models database
-    # Since PR #12833, SaaS uses a database instead of verified-models.ts
-    # A model is only considered "frontend supported" when it's in BOTH:
-    # 1. verified-models.ts (for self-hosted)
-    # 2. SaaS verified_models database (for app.all-hands.dev)
+    # Check if model is currently available in SaaS verified_models database.
+    # This is best-effort: if the live SaaS API cannot be confirmed, keep the
+    # self-hosted frontend timestamp instead of regressing known frontend support.
     print(f"Checking if {model_id} is in SaaS verified models...")
     saas_available = check_saas_verified_model(model_id)
-    result["frontend_saas_available"] = saas_available
+    result["frontend_saas_available"] = saas_available is True
 
-    # Only set frontend_support_timestamp if model is available in both places
-    if frontend_code_timestamp and saas_available:
-        result["frontend_support_timestamp"] = frontend_code_timestamp
-    else:
-        result["frontend_support_timestamp"] = None
+    # Frontend support timestamp reflects self-hosted/frontend-code support.
+    # SaaS availability is tracked separately in frontend_saas_available.
+    result["frontend_support_timestamp"] = frontend_code_timestamp
 
     # Search for index results using local git clone
     # Note: No adjust_timestamp_to_release - index requires explicit model additions
