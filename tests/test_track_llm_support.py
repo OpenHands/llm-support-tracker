@@ -619,18 +619,41 @@ class TestTrackLlmSupport:
         self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra, 
         mock_find_versions, mock_check_saas
     ):
-        """Test that frontend_support_timestamp is None when only in code but not SaaS."""
+        """Test that frontend code support is preserved even when SaaS is not confirmed."""
         mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
         mock_search_frontend.return_value = "2024-01-25T10:00:00Z"  # In code
-        mock_check_saas.return_value = False  # NOT in SaaS database
+        mock_check_saas.return_value = False  # Not confirmed in SaaS database
         mock_search_index.return_value = None
         mock_search_infra.side_effect = [None, None]
         mock_find_versions.return_value = []
 
         result = track_llm_support("test-model", "2024-01-15")
 
-        # frontend_support_timestamp should be None because model is not in SaaS
-        assert result["frontend_support_timestamp"] is None
+        assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
+        assert result["frontend_saas_available"] is False
+
+    @patch("track_llm_support.check_saas_verified_model")
+    @patch("track_llm_support.find_litellm_versions_supporting_model")
+    @patch("track_llm_support.search_infra_proxy")
+    @patch("track_llm_support.search_index_results_for_model")
+    @patch("track_llm_support.search_frontend_for_model")
+    @patch("track_llm_support.search_sdk_for_model")
+    def test_track_llm_support_frontend_code_preserved_when_saas_check_unavailable(
+        self, mock_search_sdk, mock_search_frontend, mock_search_index, mock_search_infra,
+        mock_find_versions, mock_check_saas
+    ):
+        """Test that an unavailable SaaS check does not erase known frontend code support."""
+        mock_search_sdk.return_value = "2024-01-20T10:00:00Z"
+        mock_search_frontend.return_value = "2024-01-25T10:00:00Z"
+        mock_check_saas.return_value = None
+        mock_search_index.return_value = None
+        mock_search_infra.side_effect = [None, None]
+        mock_find_versions.return_value = []
+
+        result = track_llm_support("test-model", "2024-01-15")
+
+        assert result["frontend_support_timestamp"] == "2024-01-25T10:00:00Z"
+        assert result["frontend_saas_available"] is False
 
 
 class TestOutputFormat:
@@ -740,6 +763,8 @@ class TestCheckSaasVerifiedModel:
     def test_model_found_in_saas(self, mock_get):
         """Test that a model in the openhands provider list returns True."""
         mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '["anthropic/claude-opus-4-6"]'
         mock_response.json.return_value = [
             "anthropic/claude-opus-4-6",
             "openhands/claude-opus-4-5-20251101",
@@ -756,6 +781,8 @@ class TestCheckSaasVerifiedModel:
     def test_model_found_in_saas_with_bare_name(self, mock_get):
         """Test that a bare verified model name from the SaaS API returns True."""
         mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '["claude-sonnet-4-6"]'
         mock_response.json.return_value = [
             "claude-sonnet-4-6",
             "openhands/claude-opus-4-5-20251101",
@@ -772,6 +799,8 @@ class TestCheckSaasVerifiedModel:
     def test_model_not_found_in_saas(self, mock_get):
         """Test that non-OpenHands provider entries do not count as SaaS support."""
         mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '["anthropic/claude-opus-4-6"]'
         mock_response.json.return_value = [
             "anthropic/claude-opus-4-6",
             "zai.glm-4.7",
@@ -787,22 +816,52 @@ class TestCheckSaasVerifiedModel:
             result = check_saas_verified_model("claude-opus-4-6")
             assert result is False
 
-    def test_no_api_key_returns_false(self):
-        """Test that missing LLM_API_KEY returns False."""
+    def test_no_api_key_returns_none(self):
+        """Test that missing API keys return None (unconfirmed)."""
         with patch.dict(os.environ, {}, clear=True):
-            # Ensure LLM_API_KEY is not set
-            os.environ.pop("LLM_API_KEY", None)
             result = check_saas_verified_model("any-model")
-            assert result is False
+            assert result is None
 
     @patch("track_llm_support.requests.get")
-    def test_api_error_returns_false(self, mock_get):
-        """Test that API errors return False."""
+    def test_api_error_returns_none(self, mock_get):
+        """Test that API errors return None (unconfirmed)."""
         mock_get.side_effect = Exception("API error")
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
             result = check_saas_verified_model("any-model")
-            assert result is False
+            assert result is None
+
+    @patch("track_llm_support.requests.get")
+    def test_non_json_response_returns_none(self, mock_get):
+        """Test that an HTML response is treated as an unconfirmed SaaS check."""
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "text/html; charset=utf-8"}
+        mock_response.text = "<html><body>OpenHands</body></html>"
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("any-model")
+            assert result is None
+
+    @patch("track_llm_support.requests.get")
+    def test_items_payload_is_supported(self, mock_get):
+        """Test that the config/models/search payload shape is supported."""
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '{"items": []}'
+        mock_response.json.return_value = {
+            "items": [
+                {"provider": "openhands", "name": "gemini-3-pro-preview"},
+                {"provider": "anthropic", "name": "claude-opus-4-6"},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("Gemini-3-Pro")
+            assert result is True
 
     @patch("track_llm_support.requests.get")
     def test_gpt54_matches_simple_alias(self, mock_get):

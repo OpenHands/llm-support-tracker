@@ -5,8 +5,9 @@ import {
   computeFamilyChartData,
   computeAverageChartData,
   applyRollingAverage,
-  getWeeklySampleDates,
+  getWeeklySampleDates
 } from './App';
+import { getFrontendSupportStatus } from './frontendSupport';
 
 interface ModelSupport {
   model_id: string;
@@ -14,11 +15,43 @@ interface ModelSupport {
   tier: number;
   sdk_support_timestamp: string | null;
   frontend_support_timestamp: string | null;
+  frontend_saas_available: boolean;
   index_results_timestamp: string | null;
   eval_proxy_timestamp: string | null;
   prod_proxy_timestamp: string | null;
   litellm_support_timestamp: string | null;
 }
+
+
+describe('getFrontendSupportStatus', () => {
+  it('should return full when frontend timestamp and SaaS availability both exist', () => {
+    expect(getFrontendSupportStatus({
+      frontend_support_timestamp: '2024-01-02T00:00:00Z',
+      frontend_saas_available: true,
+    })).toBe('full');
+  });
+
+  it('should return frontend_only when only frontend timestamp is known', () => {
+    expect(getFrontendSupportStatus({
+      frontend_support_timestamp: '2024-01-02T00:00:00Z',
+      frontend_saas_available: false,
+    })).toBe('frontend_only');
+  });
+
+  it('should return saas_only when only SaaS availability is known', () => {
+    expect(getFrontendSupportStatus({
+      frontend_support_timestamp: null,
+      frontend_saas_available: true,
+    })).toBe('saas_only');
+  });
+
+  it('should return not_found when neither frontend timestamp nor SaaS availability exists', () => {
+    expect(getFrontendSupportStatus({
+      frontend_support_timestamp: null,
+      frontend_saas_available: false,
+    })).toBe('not_found');
+  });
+});
 
 describe('isModelSupportedForAspect', () => {
   const testModel: ModelSupport = {
@@ -27,6 +60,7 @@ describe('isModelSupportedForAspect', () => {
     release_date: '2024-01-01',
     sdk_support_timestamp: '2024-01-05T00:00:00Z',
     frontend_support_timestamp: null,
+    frontend_saas_available: false,
     index_results_timestamp: '2024-01-03T00:00:00Z',
     eval_proxy_timestamp: '2024-01-10T00:00:00Z',
     prod_proxy_timestamp: null,
@@ -64,6 +98,7 @@ describe('isModelSupportedForAspect', () => {
       release_date: '2024-01-01',
       sdk_support_timestamp: '2024-01-02T00:00:00Z',
       frontend_support_timestamp: '2024-01-02T00:00:00Z',
+      frontend_saas_available: true,
       index_results_timestamp: '2024-01-02T00:00:00Z',
       eval_proxy_timestamp: '2024-01-02T00:00:00Z',
       prod_proxy_timestamp: '2024-01-02T00:00:00Z',
@@ -83,6 +118,7 @@ describe('computeDaysUnsupported', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -101,6 +137,7 @@ describe('computeDaysUnsupported', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -137,6 +174,7 @@ describe('computeDaysUnsupported', () => {
         release_date: releaseDate,
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -164,6 +202,7 @@ describe('computeDaysUnsupported', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -175,6 +214,7 @@ describe('computeDaysUnsupported', () => {
         release_date: '2024-01-03',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -273,6 +313,7 @@ describe('computeFamilyChartData', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: '2024-01-02T00:00:00Z',
         frontend_support_timestamp: '2024-01-03T00:00:00Z',
+        frontend_saas_available: true,
         index_results_timestamp: '2024-01-04T00:00:00Z',
         eval_proxy_timestamp: '2024-01-05T00:00:00Z',
         prod_proxy_timestamp: '2024-01-06T00:00:00Z',
@@ -304,6 +345,7 @@ describe('computeFamilyChartData', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
@@ -327,6 +369,7 @@ describe('computeFamilyChartData', () => {
         release_date: '2024-01-01',
         sdk_support_timestamp: null,
         frontend_support_timestamp: null,
+    frontend_saas_available: false,
         index_results_timestamp: null,
         eval_proxy_timestamp: null,
         prod_proxy_timestamp: null,
