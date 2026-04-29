@@ -123,7 +123,7 @@ export function computeDaysUnsupported(
 export function applyRollingAverage(
   data: Map<string, number>,
   sortedDates: string[],
-  windowDays: number = 30
+  windowDays: number = 7
 ): Map<string, number> {
   const result = new Map<string, number>();
 
@@ -202,14 +202,14 @@ export function computeFamilyChartData(
   const sortedDates = Array.from(allDates).sort();
   if (sortedDates.length === 0) return [];
 
-  // Apply 30-day rolling average to smooth the data (if enabled)
+  // Apply 7-day rolling average to smooth the data (if enabled)
   const aspectDataToUse: Record<Aspect, Map<string, number>> = useSmoothing
     ? {} as Record<Aspect, Map<string, number>>
     : rawAspectData;
   
   if (useSmoothing) {
     for (const aspect of aspects) {
-      aspectDataToUse[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 30);
+      aspectDataToUse[aspect] = applyRollingAverage(rawAspectData[aspect], sortedDates, 7);
     }
   }
 
@@ -758,7 +758,7 @@ function App() {
                         : 'text-[#9099ac] hover:text-white'
                     }`}
                   >
-                    30-Day Average
+                    7-Day Average
                   </button>
                 </div>
               </div>
