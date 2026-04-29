@@ -243,7 +243,7 @@ describe('computeDaysUnsupported', () => {
 });
 
 describe('applyRollingAverage', () => {
-  it('should compute 30-day rolling average', () => {
+  it('should compute 7-day rolling average', () => {
     const data = new Map<string, number>([
       ['2024-01-01', 0],
       ['2024-01-02', 10],
@@ -252,7 +252,7 @@ describe('applyRollingAverage', () => {
     ]);
     const sortedDates = ['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04'];
 
-    const result = applyRollingAverage(data, sortedDates, 30);
+    const result = applyRollingAverage(data, sortedDates, 7);
 
     // Day 1: avg of [0] = 0
     expect(result.get('2024-01-01')).toBe(0);
@@ -271,11 +271,11 @@ describe('applyRollingAverage', () => {
     ]);
     const sortedDates = ['2024-01-01', '2024-02-05'];
 
-    const result = applyRollingAverage(data, sortedDates, 30);
+    const result = applyRollingAverage(data, sortedDates, 7);
 
     // Day 1: avg of [100] = 100
     expect(result.get('2024-01-01')).toBe(100);
-    // Feb 5: only includes itself (Jan 1 is > 30 days ago)
+    // Feb 5: only includes itself (Jan 1 is > 7 days ago)
     expect(result.get('2024-02-05')).toBe(10);
   });
 });
@@ -361,7 +361,7 @@ describe('computeFamilyChartData', () => {
     expect(dates).toEqual(sampleDates);
   });
 
-  it('should apply 30-day rolling average to smooth data', () => {
+  it('should apply 7-day rolling average to smooth data', () => {
     const models: ModelSupport[] = [
       {
         tier: 1,
@@ -383,9 +383,9 @@ describe('computeFamilyChartData', () => {
 
     // With rolling average, the values should be smoothed
     // Jan 7: avg of days 1-7 (raw values 1,2,3,4,5,6,7) = 4
-    // Jan 14: avg of days 1-14 (raw values 1-14) = 7.5 -> 8
-    // Jan 21: avg of days 1-21 (raw 1-14, then 0s for 15-21) = sum(1-14)/21 = 105/21 = 5
-    // The exact values depend on the 30-day window, but they should be smoothed
+    // Jan 14: values should be lower than the raw streak because the 7-day window smooths them
+    // Jan 21: values should continue dropping after support arrives
+    // The exact values depend on the 7-day window, but they should be smoothed
     expect(result.length).toBe(4);
     
     // Value on Jan 21 should be less than Jan 14 due to smoothing after support
