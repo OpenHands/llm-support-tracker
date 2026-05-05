@@ -568,16 +568,27 @@ def search_frontend_for_model(model_id: str) -> Optional[str]:
 
 
 def _extract_saas_model_names(payload) -> Optional[list[str]]:
-    """Extract model identifiers from supported SaaS API response shapes."""
+    """Extract model identifiers from supported SaaS API response shapes.
+
+    Returns the *full* catalog of available models (every entry the SaaS
+    dropdown could surface), spanning both the "Verified" and "Others"
+    sections of the model selector.  Earlier versions of this function
+    preferred the legacy ``verified_models`` field, but that only contains
+    the bare openhands-provider names — it would miss models exposed under
+    other providers (e.g. ``anthropic/claude-opus-4-6``) which the frontend
+    happily renders under the "Others" section.
+    """
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, str)]
 
     if isinstance(payload, dict):
-        if isinstance(payload.get("verified_models"), list):
-            return [item for item in payload["verified_models"] if isinstance(item, str)]
-
+        # Prefer the full models list over verified_models because the
+        # frontend dropdown shows both verified and other-provider models.
         if isinstance(payload.get("models"), list):
             return [item for item in payload["models"] if isinstance(item, str)]
+
+        if isinstance(payload.get("verified_models"), list):
+            return [item for item in payload["verified_models"] if isinstance(item, str)]
 
         if isinstance(payload.get("items"), list):
             models = []
@@ -610,12 +621,25 @@ def _fetch_json_payload(url: str, headers: dict, params: dict | None = None):
 
 
 def _fetch_saas_models_v1(headers: dict) -> list[str]:
-    """Fetch SaaS OpenHands-provider models from the v1 config API."""
-    models = []
+    """Fetch the full SaaS model catalog from the v1 config API.
+
+    Returns ``provider/name`` strings for every model the SaaS dropdown can
+    surface, spanning both the "Verified" section (``openhands/`` provider)
+    and the "Others" section (LiteLLM / Bedrock / Ollama models grouped by
+    their own provider).  Previously this function only fetched the
+    ``openhands`` provider, which meant the tracker missed models that
+    appear in the dropdown's "Others" section (e.g.
+    ``anthropic/claude-opus-4-6``).
+    """
+    models: list[str] = []
     page_id = None
 
-    for _ in range(20):
-        params = {"provider__eq": "openhands", "limit": 100}
+    # ``provider__eq=openhands`` is intentionally omitted: the dropdown
+    # shows every provider's models, so we need the full catalog.  The
+    # litellm catalogue has on the order of a couple thousand entries,
+    # so allow up to 50 pages of 100 results.
+    for _ in range(50):
+        params: dict[str, str | int] = {"limit": 100}
         if page_id:
             params["page_id"] = page_id
 
@@ -641,8 +665,30 @@ def _fetch_saas_models_v1(headers: dict) -> list[str]:
     return models
 
 
-def _fetch_saas_models() -> Optional[list[str]]:
-    """Fetch the current SaaS model list, returning None when it cannot be confirmed."""
+# Process-wide cache for the SaaS model catalog.  The dropdown is the same
+# for every model we track in a single run, so fetching it once is enough.
+_saas_models_cache: dict = {"models": None, "failed": False}
+
+
+def reset_saas_models_cache() -> None:
+    """Reset the SaaS model cache (intended for tests)."""
+    _saas_models_cache["models"] = None
+    _saas_models_cache["failed"] = False
+
+
+def _fetch_saas_models(*, use_cache: bool = True) -> Optional[list[str]]:
+    """Fetch the current SaaS model list, returning None when it cannot be confirmed.
+
+    Uses a process-wide cache so that tracking multiple models in the same
+    run doesn't refetch the (potentially large) catalog repeatedly.
+    """
+    if use_cache:
+        cached = _saas_models_cache.get("models")
+        if cached is not None:
+            return cached
+        if _saas_models_cache.get("failed"):
+            return None
+
     api_keys = [
         ("OPENHANDS_CLOUD_API_KEY", os.environ.get("OPENHANDS_CLOUD_API_KEY")),
         ("LLM_API_KEY", os.environ.get("LLM_API_KEY")),
@@ -654,6 +700,8 @@ def _fetch_saas_models() -> Optional[list[str]]:
             "Warning: no API key available, cannot confirm SaaS verified models",
             file=sys.stderr,
         )
+        if use_cache:
+            _saas_models_cache["failed"] = True
         return None
 
     legacy_urls = [
@@ -672,6 +720,8 @@ def _fetch_saas_models() -> Optional[list[str]]:
             try:
                 models = _fetch_saas_models_v1(headers)
                 if models:
+                    if use_cache:
+                        _saas_models_cache["models"] = models
                     return models
                 last_error = "empty model list from /api/v1/config/models/search"
             except Exception as exc:
@@ -682,6 +732,8 @@ def _fetch_saas_models() -> Optional[list[str]]:
                     payload = _fetch_json_payload(url, headers)
                     models = _extract_saas_model_names(payload)
                     if models is not None:
+                        if use_cache:
+                            _saas_models_cache["models"] = models
                         return models
                     last_error = f"unsupported JSON payload shape from {url}"
                 except Exception as exc:
@@ -690,59 +742,107 @@ def _fetch_saas_models() -> Optional[list[str]]:
 
     if last_error:
         print(f"Warning: Error checking SaaS verified models: {last_error}", file=sys.stderr)
+    if use_cache:
+        _saas_models_cache["failed"] = True
     return None
+
+
+# Bedrock-style provider-dot prefixes that appear inside model `name`
+# fields (e.g. ``bedrock/anthropic.claude-opus-4-6``).  These are not bare
+# model names, so they should be excluded when building the bare-alias
+# set used to match openhands-provider verified entries.
+_PROVIDER_DOT_PREFIXES = (
+    "anthropic.",
+    "minimax.",
+    "moonshot.",
+    "moonshotai.",
+    "nvidia.",
+    "qwen.",
+    "zai.",
+)
+
+
+def _build_saas_aliases(model_id: str) -> tuple[set[str], set[str]]:
+    """Build the (full, bare) lowercase alias sets used for SaaS matching.
+
+    * ``full`` contains every alias as-is (including LiteLLM-style names
+      like ``gemini/gemini-3-pro`` and ``zai.glm-4.7``).  Used for exact
+      matches against entries in the SaaS catalog.
+    * ``bare`` contains only the simple model identifiers (no slashes,
+      no Bedrock-style provider-dot prefix).  Used to match the model
+      name part of a ``provider/<name>`` SaaS entry — i.e. the "Others"
+      section, where any provider could expose the model under its bare
+      LiteLLM name.
+    """
+    full = {model_id.lower()}
+    full.update(alias.lower() for alias in get_model_aliases(model_id))
+
+    bare = set()
+    for alias in full:
+        if "/" in alias:
+            continue
+        if alias.startswith(_PROVIDER_DOT_PREFIXES):
+            continue
+        bare.add(alias)
+
+    return full, bare
 
 
 def check_saas_verified_model(model_id: str) -> Optional[bool]:
     """
-    Check if a model is currently in the SaaS verified_models database.
+    Check if a model is currently available in the SaaS frontend dropdown.
 
-    Queries the app.all-hands.dev APIs to check if the model appears in the
-    openhands provider's model list. This indicates the model is available
-    in the production SaaS dropdown.
+    The OpenHands SaaS frontend renders a model selector with two
+    sections (see ``frontend/src/components/shared/modals/settings/model-selector.tsx``
+    in the OpenHands repo):
 
-    Returns ``None`` when the live SaaS model list cannot be confirmed.
+    * **Verified** — admin-curated openhands-provider models pulled from
+      the verified-models database table.
+    * **Others** — every other model in the LiteLLM/Bedrock/Ollama catalog,
+      grouped under the relevant provider (e.g. ``anthropic``, ``gemini``,
+      ``openai``).
 
-    Args:
-        model_id: The language model ID to check
+    Both sections are user-selectable, so for the purposes of "is this
+    model usable on app.all-hands.dev" the tracker counts a model as
+    available when it appears in *either* section.  Earlier versions of
+    this function only checked the verified/openhands list, which made
+    the tracker miss models that had been wired into the Others section
+    (e.g. when LiteLLM picks up the model under its native provider).
 
-    Returns:
-        True if model is in the SaaS verified models, False if confirmed absent,
-        or None if the SaaS model list could not be fetched.
+    Returns ``True`` when the model is in either section, ``False`` when
+    it is confirmed absent, and ``None`` when the SaaS catalog could not
+    be fetched.
     """
     models = _fetch_saas_models()
     if models is None:
         return None
 
-    # The SaaS API may return OpenHands models as either:
-    # - openhands/model-name
-    # - bare model-name (as shown in the settings UI)
-    # Match the canonical ID plus frontend-style aliases, but ignore
-    # provider-specific LiteLLM aliases.
-    model_lower = model_id.lower()
-    saas_aliases = {model_lower}
-    for alias in get_model_aliases(model_id):
-        alias_lower = alias.lower()
-        if alias_lower == model_lower:
-            continue
-        if "/" in alias_lower:
-            continue
-        if alias_lower.startswith(("zai.", "moonshotai.", "minimax.", "qwen.", "nvidia.")):
-            continue
-        if alias_lower.endswith("-preview") or re.search(r"-\d{8}$", alias_lower):
-            saas_aliases.add(alias_lower)
+    full_aliases, bare_aliases = _build_saas_aliases(model_id)
 
     for model in models:
-        model_lower = model.lower()
-        if model_lower.startswith("openhands/"):
-            model_name = model_lower[len("openhands/"):]
-        elif "/" not in model_lower:
-            model_name = model_lower
-        else:
-            continue
+        m = model.lower()
 
-        if model_name in saas_aliases:
+        # Direct match against any known alias.  Catches both legacy bare
+        # names (``glm-4.7``) and LiteLLM-style entries we've explicitly
+        # registered (``gemini/gemini-3-pro``, ``zai.glm-4.7``,
+        # ``openrouter/z-ai/glm-4.7``).
+        if m in full_aliases:
             return True
+
+        if "/" in m:
+            # ``provider/<name>`` form — in the dropdown this lives under
+            # whichever provider the user picks.  When ``<name>`` matches
+            # one of our bare aliases we treat the model as available in
+            # the Others section, even if we never registered the exact
+            # ``provider/<name>`` string as an alias.
+            _, _, name_after_first = m.partition("/")
+            if name_after_first in bare_aliases:
+                return True
+            # Some entries are nested (e.g. ``openrouter/z-ai/glm-4.7``);
+            # the last segment is still the recognisable model name.
+            name_after_last = m.rsplit("/", 1)[-1]
+            if name_after_last in bare_aliases:
+                return True
 
     return False
 
