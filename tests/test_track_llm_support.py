@@ -19,6 +19,7 @@ from track_llm_support import (
     MODEL_ALIASES,
     check_model_in_litellm_json,
     check_saas_verified_model,
+    reset_saas_models_cache,
     search_commits_for_model,
     search_frontend_for_model,
     search_index_results_folder,
@@ -28,6 +29,20 @@ from track_llm_support import (
     find_litellm_versions_supporting_model,
     track_llm_support,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_saas_cache():
+    """Reset the SaaS catalog cache before every test.
+
+    ``check_saas_verified_model`` uses a process-wide cache so multi-model
+    runs don't refetch the catalog.  Tests mock the underlying HTTP call
+    and expect each test to see its own response, so we clear the cache
+    before each test.
+    """
+    reset_saas_models_cache()
+    yield
+    reset_saas_models_cache()
 
 
 class TestModelAliases:
@@ -858,7 +873,7 @@ class TestCheckSaasVerifiedModel:
 
     @patch("track_llm_support.requests.get")
     def test_model_not_found_in_saas(self, mock_get):
-        """Test that non-OpenHands provider entries do not count as SaaS support."""
+        """Non-openhands provider entries do not count as SaaS support."""
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
         mock_response.text = '["anthropic/claude-opus-4-6"]'
@@ -873,8 +888,57 @@ class TestCheckSaasVerifiedModel:
         mock_get.return_value = mock_response
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
-            # claude-opus-4-6 is only exposed via anthropic/ here, not OpenHands
+            # claude-opus-4-6 is only exposed via anthropic/ here, not
+            # under the openhands provider, so it should not count.
             result = check_saas_verified_model("claude-opus-4-6")
+            assert result is False
+
+    @patch("track_llm_support.requests.get")
+    def test_openhands_provider_others_subsection_counts(self, mock_get):
+        """Models in the openhands provider's "Others" subsection count.
+
+        The frontend splits the openhands provider's models into a
+        "Verified" subsection (those in the SDK's hardcoded list) and an
+        "Others" subsection (DB entries the SDK doesn't yet recognise).
+        Both are user-selectable, so a model that lives in the openhands
+        provider — regardless of whether the SDK has flagged it
+        ``verified: true`` — must be reported as available.
+
+        Here ``glm-4-7-251222`` is a registered LiteLLM-style alias for
+        ``GLM-4.7``; if it shows up under ``openhands/`` then GLM-4.7 is
+        in the openhands provider dropdown and should match.
+        """
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '["openhands/glm-4-7-251222"]'
+        mock_response.json.return_value = [
+            "openhands/glm-4-7-251222",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GLM-4.7")
+            assert result is True
+
+    @patch("track_llm_support.requests.get")
+    def test_non_openhands_provider_entries_ignored_for_alias_matches(self, mock_get):
+        """Even when the SaaS catalog surfaces the model under a non-openhands
+        provider with a name we'd recognise as an alias, the tracker only
+        cares about the openhands-provider buckets.
+        """
+        mock_response = MagicMock()
+        mock_response.headers = {"content-type": "application/json"}
+        mock_response.text = '["zai/glm-4.7"]'
+        mock_response.json.return_value = [
+            "zai/glm-4.7",
+            "openrouter/z-ai/glm-4.7",
+        ]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            result = check_saas_verified_model("GLM-4.7")
             assert result is False
 
     def test_no_api_key_returns_none(self):
