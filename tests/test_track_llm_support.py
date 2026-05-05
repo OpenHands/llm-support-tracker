@@ -872,19 +872,15 @@ class TestCheckSaasVerifiedModel:
             assert result is True
 
     @patch("track_llm_support.requests.get")
-    def test_model_found_via_other_provider(self, mock_get):
-        """Models exposed via a non-openhands provider count as available.
-
-        The frontend dropdown shows both the "Verified" (openhands) section
-        and the "Others" section (every other provider).  A model under
-        ``anthropic/<bare-name>`` is just as user-selectable as one under
-        ``openhands/<bare-name>``, so it should be reported as available.
-        """
+    def test_model_not_found_in_saas(self, mock_get):
+        """Non-openhands provider entries do not count as SaaS support."""
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
         mock_response.text = '["anthropic/claude-opus-4-6"]'
         mock_response.json.return_value = [
             "anthropic/claude-opus-4-6",
+            "zai.glm-4.7",
+            "openrouter/z-ai/glm-4.7",
             "openhands/claude-opus-4-5-20251101",
             "openhands/gpt-5.2",
         ]
@@ -892,41 +888,31 @@ class TestCheckSaasVerifiedModel:
         mock_get.return_value = mock_response
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
+            # claude-opus-4-6 is only exposed via anthropic/ here, not
+            # under the openhands provider, so it should not count.
             result = check_saas_verified_model("claude-opus-4-6")
-            assert result is True
-
-    @patch("track_llm_support.requests.get")
-    def test_model_not_in_catalog_at_all(self, mock_get):
-        """Models that don't appear in any provider's list are absent."""
-        mock_response = MagicMock()
-        mock_response.headers = {"content-type": "application/json"}
-        mock_response.text = '[]'
-        mock_response.json.return_value = [
-            "openhands/claude-opus-4-5-20251101",
-            "openhands/gpt-5.2",
-            "anthropic/claude-3-5-sonnet",
-        ]
-        mock_response.raise_for_status = MagicMock()
-        mock_get.return_value = mock_response
-
-        with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
-            result = check_saas_verified_model("claude-opus-4-7")
             assert result is False
 
     @patch("track_llm_support.requests.get")
-    def test_glm_matched_via_litellm_alias(self, mock_get):
-        """LiteLLM-style alias entries (e.g. ``zai.glm-4.7``) are recognised.
+    def test_openhands_provider_others_subsection_counts(self, mock_get):
+        """Models in the openhands provider's "Others" subsection count.
 
-        ``zai.glm-4.7`` is a registered alias for ``GLM-4.7``, so when the
-        SaaS catalog surfaces it the model should be reported as available
-        even when no openhands/ entry exists.
+        The frontend splits the openhands provider's models into a
+        "Verified" subsection (those in the SDK's hardcoded list) and an
+        "Others" subsection (DB entries the SDK doesn't yet recognise).
+        Both are user-selectable, so a model that lives in the openhands
+        provider — regardless of whether the SDK has flagged it
+        ``verified: true`` — must be reported as available.
+
+        Here ``glm-4-7-251222`` is a registered LiteLLM-style alias for
+        ``GLM-4.7``; if it shows up under ``openhands/`` then GLM-4.7 is
+        in the openhands provider dropdown and should match.
         """
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
-        mock_response.text = '["zai.glm-4.7"]'
+        mock_response.text = '["openhands/glm-4-7-251222"]'
         mock_response.json.return_value = [
-            "zai.glm-4.7",
-            "openrouter/z-ai/glm-4.7",
+            "openhands/glm-4-7-251222",
         ]
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
@@ -936,26 +922,24 @@ class TestCheckSaasVerifiedModel:
             assert result is True
 
     @patch("track_llm_support.requests.get")
-    def test_nested_provider_path_is_matched(self, mock_get):
-        """Nested ``provider/sub/name`` entries match on their last segment.
-
-        Some providers (notably OpenRouter) namespace models with multiple
-        slashes, e.g. ``openrouter/anthropic/claude-opus-4-6``.  The last
-        segment is still the recognisable LiteLLM model name, so this must
-        count as the model being available in the Others section.
+    def test_non_openhands_provider_entries_ignored_for_alias_matches(self, mock_get):
+        """Even when the SaaS catalog surfaces the model under a non-openhands
+        provider with a name we'd recognise as an alias, the tracker only
+        cares about the openhands-provider buckets.
         """
         mock_response = MagicMock()
         mock_response.headers = {"content-type": "application/json"}
-        mock_response.text = '["openrouter/anthropic/claude-opus-4-6"]'
+        mock_response.text = '["zai/glm-4.7"]'
         mock_response.json.return_value = [
-            "openrouter/anthropic/claude-opus-4-6",
+            "zai/glm-4.7",
+            "openrouter/z-ai/glm-4.7",
         ]
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
 
         with patch.dict(os.environ, {"LLM_API_KEY": "test-key"}):
-            result = check_saas_verified_model("claude-opus-4-6")
-            assert result is True
+            result = check_saas_verified_model("GLM-4.7")
+            assert result is False
 
     def test_no_api_key_returns_none(self):
         """Test that missing API keys return None (unconfirmed)."""
